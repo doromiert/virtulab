@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import time
 import uuid
@@ -10,6 +11,7 @@ from pathlib import Path
 
 SCHEMA_VERSION = 1
 CABLE_MODES = {"realistic", "straight", "hidden"}
+BUILTIN_CABLE_COLORS = {"yellow", "blue", "red", "green", "black", "orange", "cyan", "white", "purple"}
 
 
 def _ports(prefix: str, count: int, connector: str = "rj45", medium: str = "ethernet") -> list[dict]:
@@ -270,14 +272,38 @@ class WorkspaceStore:
         port_b: str,
         color: str,
     ) -> None:
+        color = self._validate_color(color)
+        if port_a == port_b:
+            raise WorkspaceError("A cable must connect two different ports")
         ports = connection.execute(
-            "SELECT id, medium FROM ports WHERE id IN (?, ?)", (port_a, port_b)
+            """
+            SELECT ports.id, ports.medium, devices.workspace_id
+            FROM ports JOIN devices ON devices.id = ports.device_id
+            WHERE ports.id IN (?, ?)
+            """,
+            (port_a, port_b),
         ).fetchall()
-        if len(ports) != 2 or ports[0]["medium"] != ports[1]["medium"]:
+        if len(ports) != 2 or any(port["workspace_id"] != workspace_id for port in ports):
+            raise WorkspaceError("Cable ports must belong to the selected workspace")
+        if ports[0]["medium"] != ports[1]["medium"]:
             raise WorkspaceError("Cable ports must exist and use the same medium")
         connection.execute(
             "INSERT INTO cables(id, workspace_id, port_a, port_b, medium, color) VALUES (?, ?, ?, ?, ?, ?)",
             (cable_id, workspace_id, port_a, port_b, ports[0]["medium"], color),
+        )
+
+    @staticmethod
+    def _validate_color(color: str) -> str:
+        normalized = color.strip().lower()
+        if normalized in BUILTIN_CABLE_COLORS or re.fullmatch(r"#[0-9a-f]{6}", normalized):
+            return normalized
+        raise WorkspaceError(f"Unsupported cable color: {color}")
+
+    @staticmethod
+    def _touch(connection: sqlite3.Connection, workspace_id: str) -> None:
+        connection.execute(
+            "UPDATE workspaces SET revision = revision + 1, updated_at = ? WHERE id = ?",
+            (int(time.time()), workspace_id),
         )
 
     def catalog(self) -> dict:
@@ -361,10 +387,53 @@ class WorkspaceStore:
             if connection.execute("SELECT 1 FROM workspaces WHERE id = ?", (workspace_id,)).fetchone() is None:
                 raise WorkspaceError(f"Unknown workspace: {workspace_id}")
             self._insert_device(connection, workspace_id, device_id, profile_id, display_name, x, y)
-            connection.execute(
-                "UPDATE workspaces SET revision = revision + 1, updated_at = ? WHERE id = ?",
-                (int(time.time()), workspace_id),
+            self._touch(connection, workspace_id)
+        return self.snapshot(workspace_id)
+
+    def update_device_os(self, workspace_id: str, device_id: str, os_template: str | None) -> dict:
+        if os_template is not None and os_template not in {template["id"] for template in TEMPLATE_CATALOG}:
+            raise WorkspaceError(f"Unknown OS template: {os_template}")
+        with self._connection() as connection:
+            cursor = connection.execute(
+                "UPDATE devices SET os_template = ? WHERE id = ? AND workspace_id = ?",
+                (os_template, device_id, workspace_id),
             )
+            if cursor.rowcount != 1:
+                raise WorkspaceError(f"Unknown device: {device_id}")
+            self._touch(connection, workspace_id)
+        return self.snapshot(workspace_id)
+
+    def add_cable(self, workspace_id: str, port_a: str, port_b: str, color: str) -> dict:
+        cable_id = f"cable-{uuid.uuid4().hex[:12]}"
+        with self._connection() as connection:
+            connection.execute(
+                "DELETE FROM cables WHERE workspace_id = ? AND (port_a IN (?, ?) OR port_b IN (?, ?))",
+                (workspace_id, port_a, port_b, port_a, port_b),
+            )
+            self._insert_cable(connection, workspace_id, cable_id, port_a, port_b, color)
+            self._touch(connection, workspace_id)
+        return self.snapshot(workspace_id)
+
+    def update_cable_color(self, workspace_id: str, cable_id: str, color: str) -> dict:
+        normalized = self._validate_color(color)
+        with self._connection() as connection:
+            cursor = connection.execute(
+                "UPDATE cables SET color = ? WHERE id = ? AND workspace_id = ?",
+                (normalized, cable_id, workspace_id),
+            )
+            if cursor.rowcount != 1:
+                raise WorkspaceError(f"Unknown cable: {cable_id}")
+            self._touch(connection, workspace_id)
+        return self.snapshot(workspace_id)
+
+    def remove_cable(self, workspace_id: str, cable_id: str) -> dict:
+        with self._connection() as connection:
+            cursor = connection.execute(
+                "DELETE FROM cables WHERE id = ? AND workspace_id = ?", (cable_id, workspace_id)
+            )
+            if cursor.rowcount != 1:
+                raise WorkspaceError(f"Unknown cable: {cable_id}")
+            self._touch(connection, workspace_id)
         return self.snapshot(workspace_id)
 
     def remove_device(self, workspace_id: str, device_id: str) -> dict:
@@ -374,8 +443,5 @@ class WorkspaceStore:
             )
             if cursor.rowcount != 1:
                 raise WorkspaceError(f"Unknown device: {device_id}")
-            connection.execute(
-                "UPDATE workspaces SET revision = revision + 1, updated_at = ? WHERE id = ?",
-                (int(time.time()), workspace_id),
-            )
+            self._touch(connection, workspace_id)
         return self.snapshot(workspace_id)

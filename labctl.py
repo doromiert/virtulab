@@ -1440,6 +1440,24 @@ class ApiHandler(SimpleHTTPRequestHandler):
                 )
                 self.send_json(snapshot)
                 return
+            match = re.fullmatch(r"/api/product/workspaces/([^/]+)/devices/([^/]+)", path)
+            if match:
+                body = self.read_json()
+                snapshot = self.lab.product_store.update_device_os(
+                    unquote(match.group(1)),
+                    unquote(match.group(2)),
+                    body.get("osTemplate") or None,
+                )
+                self.send_json(snapshot)
+                return
+            match = re.fullmatch(r"/api/product/workspaces/([^/]+)/cables/([^/]+)", path)
+            if match:
+                body = self.read_json()
+                snapshot = self.lab.product_store.update_cable_color(
+                    unquote(match.group(1)), unquote(match.group(2)), str(body.get("color", ""))
+                )
+                self.send_json(snapshot)
+                return
             if path != "/api/topology":
                 self.send_error(HTTPStatus.NOT_FOUND)
                 return
@@ -1461,6 +1479,17 @@ class ApiHandler(SimpleHTTPRequestHandler):
                     float(body.get("x", 0)),
                     float(body.get("y", 0)),
                     body.get("name"),
+                )
+                self.send_json(snapshot, HTTPStatus.CREATED)
+                return
+            match = re.fullmatch(r"/api/product/workspaces/([^/]+)/cables", path)
+            if match:
+                body = self.read_json()
+                snapshot = self.lab.product_store.add_cable(
+                    unquote(match.group(1)),
+                    str(body.get("portA", "")),
+                    str(body.get("portB", "")),
+                    str(body.get("color", "yellow")),
                 )
                 self.send_json(snapshot, HTTPStatus.CREATED)
                 return
@@ -1505,13 +1534,20 @@ class ApiHandler(SimpleHTTPRequestHandler):
         path = urlparse(self.path).path
         try:
             match = re.fullmatch(r"/api/product/workspaces/([^/]+)/devices/([^/]+)", path)
-            if not match:
-                self.send_error(HTTPStatus.NOT_FOUND)
+            if match:
+                snapshot = self.lab.product_store.remove_device(
+                    unquote(match.group(1)), unquote(match.group(2))
+                )
+                self.send_json(snapshot)
                 return
-            snapshot = self.lab.product_store.remove_device(
-                unquote(match.group(1)), unquote(match.group(2))
-            )
-            self.send_json(snapshot)
+            match = re.fullmatch(r"/api/product/workspaces/([^/]+)/cables/([^/]+)", path)
+            if match:
+                snapshot = self.lab.product_store.remove_cable(
+                    unquote(match.group(1)), unquote(match.group(2))
+                )
+                self.send_json(snapshot)
+                return
+            self.send_error(HTTPStatus.NOT_FOUND)
         except WorkspaceError as exc:
             self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
 

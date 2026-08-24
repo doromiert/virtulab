@@ -1,10 +1,10 @@
 import { Handle, Position, type NodeProps } from '@xyflow/react';
-import { Box, CircleStop, Network, Play, Power, Printer, Router, Server, Settings2 } from 'lucide-react';
+import { Box, CircleStop, FileOutput, Network, Play, Power, Printer, Router, Server, Settings2 } from 'lucide-react';
 import type { Device } from './types';
 
 export type DeviceNodeData = {
   device: Device;
-  connectedPorts: string[];
+  connectedPortColors: Record<string, string>;
   onOpen: (device: Device) => void;
 };
 
@@ -19,15 +19,16 @@ const kindIcons = {
 
 export function DeviceNode({ data, selected }: NodeProps) {
   const nodeData = data as DeviceNodeData;
-  const { device, connectedPorts, onOpen } = nodeData;
+  const { device, connectedPortColors, onOpen } = nodeData;
   const Icon = kindIcons[device.profile.kind as keyof typeof kindIcons] ?? Box;
   const bottomPorts = device.ports.filter(port => port.side === 'bottom');
   const sidePorts = device.ports.filter(port => port.side !== 'bottom');
   const isSwitch = device.profile.kind === 'switch';
+  const isPrinter = device.profile.kind === 'printer';
 
   return (
     <article
-      className={`device-node ${selected ? 'is-selected' : ''} ${isSwitch ? 'is-switch' : ''}`}
+      className={`device-node ${selected ? 'is-selected' : ''} ${isSwitch ? 'is-switch' : ''} ${isPrinter ? 'is-printer' : ''}`}
       style={{ '--device-accent': device.profile.accent } as React.CSSProperties}
       onDoubleClick={() => onOpen(device)}
     >
@@ -43,39 +44,52 @@ export function DeviceNode({ data, selected }: NodeProps) {
           </button>
         </header>
 
+        {isPrinter && (
+          <div className="printer-output">
+            <div className="paper-stack"><span /><span /><span><FileOutput /></span></div>
+            <small>Odbiornik wydruków</small>
+          </div>
+        )}
+
         <div className={`port-bank ${isSwitch ? 'port-bank-switch' : ''}`}>
-          {bottomPorts.map((port, index) => (
-            <div className={`device-port ${connectedPorts.includes(port.id) ? 'is-connected' : ''}`} key={port.id}>
-              <span className={`port-socket connector-${port.connector}`} />
+          {bottomPorts.map(port => (
+            <div className={`device-port ${connectedPortColors[port.id] ? 'is-connected' : ''}`} key={port.id}>
               <small>{port.name}</small>
               <Handle
                 type="source"
                 position={Position.Bottom}
                 id={port.id}
-                className="port-handle"
-                style={{ left: `${((index + 1) / (bottomPorts.length + 1)) * 100}%` }}
+                className={`nodrag port-socket port-handle connector-${port.connector}`}
+                style={{ '--port-cable-color': connectedPortColors[port.id] ?? '#777d76' } as React.CSSProperties}
+                title={`${port.name} (${port.connector})`}
               />
             </div>
           ))}
         </div>
 
-        {sidePorts.map((port, index) => {
-          const position = port.side === 'left' ? Position.Left : Position.Right;
-          return (
-            <Handle
-              key={port.id}
-              type="source"
-              position={position}
-              id={port.id}
-              className={`port-handle side-handle ${connectedPorts.includes(port.id) ? 'is-connected' : ''}`}
-              style={{ top: `${32 + index * 22}%` }}
-              title={port.name}
-            />
-          );
-        })}
+        {sidePorts.length > 0 && (
+          <div className="side-port-bank">
+            {sidePorts.map(port => {
+              const position = port.side === 'left' ? Position.Left : Position.Right;
+              return (
+                <div className={`side-port side-${port.side}`} key={port.id}>
+                  <small>{port.name}</small>
+                  <Handle
+                    type="source"
+                    position={position}
+                    id={port.id}
+                    className={`nodrag port-socket port-handle connector-${port.connector}`}
+                    style={{ '--port-cable-color': connectedPortColors[port.id] ?? '#777d76' } as React.CSSProperties}
+                    title={`${port.name} (${port.connector})`}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
-      <footer className="device-statusbar device-drag-handle">
+      <footer className="device-statusbar">
         <span className={`status-dot status-${device.status}`} />
         <span>{device.status === 'running' ? 'Uruchomione' : 'Wyłączone'}</span>
         <span className="device-os">{device.os_template ?? 'Bez systemu'}</span>

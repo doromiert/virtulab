@@ -20,13 +20,14 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 
 .product-shell { position: relative; width: 100%; height: 100%; background: #171817; }
 .react-flow__pane { cursor: default; }
-.react-flow__node { cursor: default; }
-.react-flow__node.dragging .device-statusbar { cursor: grabbing; }
+.react-flow__node { cursor: grab; }
+.react-flow__node.dragging { cursor: grabbing; }
 
 .floating-topbar,
 .floating-tools,
 .floating-panel,
 .cable-mode-control,
+.cable-color-picker,
 .canvas-controls,
 .canvas-minimap,
 .panel-toggle {
@@ -55,6 +56,14 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .cable-mode-control { top: 76px; left: 50%; transform: translateX(-50%); display: flex; padding: 3px; }
 .cable-mode-control button { min-height: 28px; padding: 0 10px; border: 0; border-radius: 3px; background: transparent; color: var(--muted); font-size: 10px; cursor: pointer; }
 .cable-mode-control button.is-active { background: #3d4335; color: #f0f3eb; }
+.cable-color-picker { top: 116px; left: 50%; transform: translateX(-50%); min-height: 38px; display: flex; align-items: center; gap: 5px; padding: 5px 7px; }
+.palette-label { display: flex; align-items: center; gap: 5px; margin-right: 3px; color: var(--muted); font-size: 9px; text-transform: uppercase; }
+.palette-label svg { width: 13px; }
+.palette-divider { width: 1px; height: 20px; margin: 0 2px; background: var(--border); }
+.color-swatch { position: relative; width: 23px; height: 23px; min-width: 23px; padding: 3px; border: 1px solid #626662; border-radius: 4px; background: var(--swatch); cursor: pointer; }
+.color-swatch.is-active { outline: 2px solid #e7e9e6; outline-offset: 1px; }
+.custom-swatch { display: grid; place-items: center; color: color-mix(in srgb, var(--swatch), #fff 75%); font: 800 8px ui-monospace, monospace; }
+.custom-swatch input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
 
 .floating-panel { top: 76px; bottom: 66px; width: 270px; overflow: hidden; }
 .floating-panel > header { height: 42px; display: flex; align-items: center; justify-content: space-between; padding: 0 8px 0 12px; border-bottom: 1px solid var(--border); }
@@ -67,6 +76,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .toolbox-search input { min-width: 0; width: 100%; border: 0; outline: 0; background: transparent; color: #eee; font-size: 11px; }
 .profile-list { height: calc(100% - 98px); padding: 0 8px 10px; overflow: auto; }
 .profile-item { width: 100%; min-height: 54px; display: grid; grid-template-columns: 34px 1fr 18px; align-items: center; gap: 9px; padding: 7px; border: 1px solid transparent; border-radius: 4px; background: transparent; text-align: left; cursor: pointer; }
+.profile-item:active { cursor: grabbing; }
 .profile-item:hover { border-color: var(--border); background: var(--panel-strong); }
 .profile-item > span:first-child { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 4px; color: #101210; }
 .profile-item svg { width: 16px; height: 16px; }
@@ -83,7 +93,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 
 .inspector-content { padding: 12px; display: grid; gap: 12px; }
 .inspector-content label { display: grid; gap: 5px; color: var(--muted); font-size: 9px; text-transform: uppercase; }
-.inspector-content input { width: 100%; height: 34px; padding: 0 9px; border: 1px solid var(--border); border-radius: 4px; background: #1d1f1d; color: #e8eae7; font-size: 11px; }
+.inspector-content input, .inspector-content select { width: 100%; height: 34px; padding: 0 9px; border: 1px solid var(--border); border-radius: 4px; background: #1d1f1d; color: #e8eae7; font-size: 11px; }
 .inspector-content dl { margin: 0; border-top: 1px solid var(--border); }
 .inspector-content dl div { min-height: 31px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #393c39; }
 .inspector-content dt { color: var(--muted); font-size: 10px; }
@@ -93,31 +103,46 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .command-button:hover { background: #3a3e3a; }
 .command-button svg { width: 14px; }
 .command-button.danger { border-color: #754742; color: #f09a92; }
+.cable-inspector-color { min-height: 54px; display: flex; align-items: center; gap: 10px; padding: 9px; border: 1px solid var(--border); border-left: 4px solid var(--cable); border-radius: 4px; background: #1d1f1d; }
+.cable-inspector-color > svg { width: 19px; color: var(--cable); }
+.cable-inspector-color span { display: flex; flex-direction: column; }
+.cable-inspector-color small { color: var(--muted); font-size: 8px; text-transform: uppercase; }
+.cable-inspector-color strong { font-size: 11px; }
 
-.device-node { width: 290px; color: #e7e9e6; }
+.device-node { width: 290px; color: #e7e9e6; cursor: grab; }
 .device-node.is-switch { width: 650px; }
+.device-node.is-printer { width: 330px; }
 .device-face { position: relative; min-height: 132px; padding: 10px 12px 18px; border: 1px solid #555955; border-top: 3px solid var(--device-accent); border-radius: 6px 6px 0 0; background: #292c29; box-shadow: 0 10px 24px #0007; }
 .device-node.is-selected .device-face { outline: 2px solid var(--accent); outline-offset: 2px; }
-.device-heading { display: grid; grid-template-columns: 34px 1fr 30px; align-items: center; gap: 9px; }
+.device-heading { position: relative; z-index: 3; display: grid; grid-template-columns: 34px 1fr 30px; align-items: center; gap: 9px; }
 .device-heading > span:nth-child(2) { min-width: 0; display: flex; flex-direction: column; }
 .device-heading strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .device-heading small { margin-top: 2px; overflow: hidden; color: var(--muted); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
 .device-kind-icon { width: 32px; height: 32px; display: grid; place-items: center; border: 1px solid #5b605a; border-radius: 4px; background: #1e201e; color: var(--device-accent); }
 .device-kind-icon svg { width: 17px; }
 
-.port-bank { min-height: 57px; margin-top: 15px; display: flex; align-items: end; justify-content: center; gap: 10px; }
+.port-bank { position: relative; z-index: 3; min-height: 57px; margin-top: 15px; display: flex; align-items: end; justify-content: center; gap: 10px; }
 .port-bank-switch { display: grid; grid-template-columns: repeat(14, minmax(20px, 1fr)); gap: 5px; }
 .device-port { position: relative; min-width: 27px; display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .device-port small { max-width: 38px; overflow: hidden; color: #aeb2ad; font: 7px ui-monospace, monospace; text-overflow: ellipsis; white-space: nowrap; }
-.port-socket { width: 24px; height: 18px; display: block; border: 2px solid #777d76; border-radius: 2px; background: #101210; box-shadow: inset 0 0 0 2px #242724; }
+.port-socket.port-handle { position: relative !important; inset: auto !important; width: 24px !important; height: 18px !important; display: block; transform: none !important; border: 2px solid var(--port-cable-color) !important; border-radius: 2px !important; background: #101210 !important; box-shadow: inset 0 0 0 2px #242724; opacity: 1; cursor: crosshair; }
+.port-socket.port-handle:hover { box-shadow: 0 0 0 2px color-mix(in srgb, var(--port-cable-color), #fff 30%), inset 0 0 0 2px #242724; }
 .connector-sfp { height: 14px; border-color: #a0a59e; }
-.device-port.is-connected .port-socket { border-color: var(--device-accent); box-shadow: 0 0 0 1px var(--device-accent), inset 0 0 0 2px #242724; }
-.port-handle { width: 10px !important; height: 10px !important; bottom: -24px !important; border: 2px solid #d7d9d6 !important; background: #303430 !important; opacity: 0; }
-.device-node:hover .port-handle, .device-node.is-selected .port-handle { opacity: 1; }
-.side-handle { bottom: auto !important; }
-.side-handle.is-connected { border-color: var(--device-accent) !important; }
+.device-port.is-connected .port-socket { box-shadow: 0 0 0 1px var(--port-cable-color), inset 0 0 0 2px #242724; }
+.side-port-bank { position: relative; z-index: 3; min-height: 28px; margin-top: 8px; display: flex; justify-content: flex-end; gap: 10px; }
+.side-port { display: flex; align-items: center; gap: 5px; }
+.side-port small { color: var(--muted); font: 7px ui-monospace, monospace; }
+.side-port .port-socket { width: 20px !important; height: 15px !important; }
+.printer-output { position: relative; z-index: 3; margin: 12px auto 2px; display: grid; justify-items: center; gap: 4px; }
+.printer-output > small { color: var(--muted); font-size: 7px; }
+.paper-stack { position: relative; width: 112px; height: 31px; border: 2px solid #737873; border-radius: 2px; background: #171917; }
+.paper-stack span { position: absolute; left: 16px; right: 16px; height: 18px; border: 1px solid #a8aaa5; background: #e3e2dc; }
+.paper-stack span:nth-child(1) { top: -5px; }
+.paper-stack span:nth-child(2) { top: -2px; left: 20px; right: 20px; }
+.paper-stack span:nth-child(3) { top: 2px; display: grid; place-items: center; color: #555b55; }
+.paper-stack svg { width: 12px; }
 
-.device-statusbar { height: 34px; display: flex; align-items: center; gap: 7px; padding: 0 6px 0 10px; border: 1px solid #4d514d; border-top: 0; border-radius: 0 0 6px 6px; background: #222422; color: var(--muted); font-size: 8px; cursor: grab; }
+.device-statusbar { position: relative; z-index: 3; height: 34px; display: flex; align-items: center; gap: 7px; padding: 0 6px 0 10px; border: 1px solid #4d514d; border-top: 0; border-radius: 0 0 6px 6px; background: #222422; color: var(--muted); font-size: 8px; cursor: grab; }
 .status-dot { width: 7px; height: 7px; border-radius: 50%; background: #777b77; }
 .status-running { background: #79bd57; box-shadow: 0 0 7px #79bd57; }
 .device-os { min-width: 0; margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -148,6 +173,19 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .pcie-card strong { font-size: 11px; }
 .add-component { justify-content: center; border-style: dashed; color: #b9c0b7; cursor: pointer; }
 .add-component svg { width: 15px; }
+.printer-internal { width: min(900px, calc(100% - 80px)); margin: auto; display: grid; grid-template-columns: 1fr 1.2fr; gap: 18px; }
+.printer-chassis, .printed-output, .printer-connectors { border: 1px solid #555a55; border-radius: 5px; background: #282b28; }
+.printer-chassis { min-height: 220px; display: grid; place-content: center; justify-items: center; gap: 14px; }
+.printer-chassis > svg { width: 64px; height: 64px; color: #d27668; }
+.printer-chassis span, .printed-output span, .printer-connectors span { display: flex; flex-direction: column; }
+.printer-chassis small, .printed-output small, .printer-connectors small { color: var(--muted); font-size: 8px; text-transform: uppercase; }
+.printer-chassis strong, .printed-output strong, .printer-connectors strong { font-size: 12px; }
+.printed-output { min-height: 220px; display: grid; grid-template-columns: 42px 1fr; align-items: center; gap: 12px; padding: 22px; }
+.printed-output > svg { width: 34px; color: #e6e4db; }
+.printed-output .command-button { grid-column: 1 / -1; }
+.printer-connectors { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 1px; overflow: hidden; }
+.printer-connectors > div { min-height: 78px; display: flex; align-items: center; gap: 12px; padding: 16px; background: #222522; }
+.printer-connectors svg { width: 22px; color: var(--accent); }
 
 .error-toast { position: absolute; left: 50%; bottom: 18px; z-index: 60; transform: translateX(-50%); min-width: 300px; max-width: 560px; min-height: 40px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 5px 6px 5px 12px; border: 1px solid #874f49; border-radius: 5px; background: #3a2826; color: #f3c4bf; font-size: 11px; box-shadow: 0 8px 26px #0009; }
 .loading-screen { width: 100%; height: 100%; display: grid; place-content: center; justify-items: center; gap: 12px; background: #171817; }
@@ -160,6 +198,8 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   .toolbox-toggle { display: none; }
   .inspector-panel { left: 66px; width: auto; }
   .cable-mode-control { top: auto; bottom: 14px; }
+  .cable-color-picker { top: 66px; left: 68px; right: 14px; transform: none; overflow-x: auto; }
+  .palette-label { display: none; }
   .canvas-minimap { display: none; }
   .canvas-controls { left: 14px !important; bottom: 66px !important; flex-direction: column; }
 }

@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState, type DragEvent } from 'react';
 import {
   Background,
   BackgroundVariant,
   ConnectionMode,
+  ConnectionLineType,
   Controls,
   MiniMap,
   ReactFlow,
@@ -10,6 +11,7 @@ import {
   useEdgesState,
   useNodesState,
   type Edge,
+  type Connection,
   type Node,
   type OnNodeDrag,
   type ReactFlowInstance
@@ -17,8 +19,10 @@ import {
 import '@xyflow/react/dist/style.css';
 import {
   Box,
+  Cable,
   ChevronLeft,
   ChevronRight,
+  FileOutput,
   Languages,
   Library,
   MonitorCog,
@@ -30,32 +34,51 @@ import {
   Server,
   Settings2,
   Trash2,
+  Usb,
   X
 } from 'lucide-react';
 import { productApi } from './api';
 import { CableEdge } from './CableEdge';
 import { DeviceNode, type DeviceNodeData } from './DeviceNode';
-import type { CableMode, Catalog, Device, DeviceProfile, WorkspaceSnapshot } from './types';
+import type { Cable as WorkspaceCable, CableMode, Catalog, Device, DeviceProfile, WorkspaceSnapshot } from './types';
 import './styles.css';
 
 const nodeTypes = { device: DeviceNode };
 const edgeTypes = { cable: CableEdge };
 const cableColors: Record<string, string> = {
-  yellow: '#f4c430', blue: '#3488db', red: '#dc4641', green: '#4ea85c', black: '#25282a'
+  yellow: '#f4c430', blue: '#3488db', red: '#dc4641', green: '#4ea85c', black: '#25282a',
+  orange: '#ed8738', cyan: '#35bfd1', white: '#e8eae7', purple: '#9b6de3'
 };
+const builtinPalette = [
+  ['#f4c430', 'Żółty'], ['#3488db', 'Niebieski'], ['#dc4641', 'Czerwony'],
+  ['#4ea85c', 'Zielony'], ['#ed8738', 'Pomarańczowy'], ['#35bfd1', 'Cyjan'],
+  ['#9b6de3', 'Fioletowy'], ['#e8eae7', 'Biały'], ['#25282a', 'Czarny']
+] as const;
 const profileIcons = { router: Router, switch: Network, workstation: Box, server: Server, printer: Printer, uplink: Network };
+
+function loadCustomColors(): string[] {
+  try {
+    const stored = JSON.parse(localStorage.getItem('virtulab.customCableColors') ?? 'null');
+    if (Array.isArray(stored) && stored.length === 3 && stored.every(color => /^#[0-9a-f]{6}$/i.test(color))) return stored;
+  } catch { /* Use defaults when storage was edited externally. */ }
+  return ['#b15cff', '#ff5ca8', '#35d0ba'];
+}
 
 function toFlow(snapshot: WorkspaceSnapshot, onOpen: (device: Device) => void) {
   const portOwners = new Map<string, string>();
-  const connected = new Set<string>();
+  const connectedPortColors: Record<string, string> = {};
   snapshot.devices.forEach(device => device.ports.forEach(port => portOwners.set(port.id, device.id)));
-  snapshot.cables.forEach(cable => { connected.add(cable.port_a); connected.add(cable.port_b); });
+  snapshot.cables.forEach(cable => {
+    const color = cableColors[cable.color] ?? cable.color;
+    connectedPortColors[cable.port_a] = color;
+    connectedPortColors[cable.port_b] = color;
+  });
   const nodes: Array<Node<DeviceNodeData>> = snapshot.devices.map(device => ({
     id: device.id,
     type: 'device',
     position: { x: device.x, y: device.y },
-    dragHandle: '.device-drag-handle',
-    data: { device, connectedPorts: [...connected], onOpen }
+    zIndex: 1,
+    data: { device, connectedPortColors, onOpen }
   }));
   const edges: Edge[] = snapshot.cables.flatMap(cable => {
     const source = portOwners.get(cable.port_a);
@@ -69,10 +92,27 @@ function toFlow(snapshot: WorkspaceSnapshot, onOpen: (device: Device) => void) {
       targetHandle: cable.port_b,
       type: 'cable',
       data: { mode: snapshot.workspace.cable_mode, color: cableColors[cable.color] ?? cable.color },
-      selectable: snapshot.workspace.cable_mode !== 'hidden'
+      selectable: snapshot.workspace.cable_mode !== 'hidden',
+      zIndex: 2
     }];
   });
   return { nodes, edges };
+}
+
+function CableInspector({ cable, onRemove }: { cable: WorkspaceCable; onRemove: () => void }) {
+  return (
+    <div className="inspector-content">
+      <div className="cable-inspector-color" style={{ '--cable': cableColors[cable.color] ?? cable.color } as React.CSSProperties}>
+        <Cable /><span><small>Połączenie</small><strong>{cable.medium}</strong></span>
+      </div>
+      <dl>
+        <div><dt>Port A</dt><dd>{cable.port_a.split(':').at(-1)}</dd></div>
+        <div><dt>Port B</dt><dd>{cable.port_b.split(':').at(-1)}</dd></div>
+        <div><dt>Kolor</dt><dd>{cable.color}</dd></div>
+      </dl>
+      <button className="command-button danger" onClick={onRemove}><Trash2 />Odłącz kabel</button>
+    </div>
+  );
 }
 
 function ProductCanvas() {
@@ -81,6 +121,9 @@ function ProductCanvas() {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node<DeviceNodeData>>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
+  const [selectedCableId, setSelectedCableId] = useState<string | null>(null);
+  const [selectedColor, setSelectedColor] = useState('#f4c430');
+  const [customColors, setCustomColors] = useState(loadCustomColors);
   const [internalDevice, setInternalDevice] = useState<Device | null>(null);
   const [toolboxOpen, setToolboxOpen] = useState(() => window.innerWidth > 900);
   const [inspectorOpen, setInspectorOpen] = useState(() => window.innerWidth > 900);
@@ -109,10 +152,7 @@ function ProductCanvas() {
     }
   }, [snapshot]);
 
-  const selectedTemplate = useMemo(
-    () => catalog?.templates.find(template => template.id === selectedDevice?.os_template),
-    [catalog, selectedDevice]
-  );
+  const selectedCable = snapshot?.cables.find(cable => cable.id === selectedCableId) ?? null;
 
   const persistPosition: OnNodeDrag<Node<DeviceNodeData>> = async (_, node) => {
     if (!snapshot) return;
@@ -141,12 +181,90 @@ function ProductCanvas() {
     }
   }
 
-  async function addDevice(profile: DeviceProfile) {
+  async function addDevice(profile: DeviceProfile, position?: { x: number; y: number }) {
     if (!snapshot) return;
-    const center = flow?.screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 }) ?? { x: 0, y: 0 };
+    const center = position ?? flow?.screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 }) ?? { x: 0, y: 0 };
     setSaving(true);
     try {
       setSnapshot(await productApi.addDevice(snapshot.workspace.id, profile.id, center.x, center.y));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function startToolboxDrag(event: DragEvent<HTMLButtonElement>, profile: DeviceProfile) {
+    event.dataTransfer.setData('application/x-virtulab-profile', profile.id);
+    event.dataTransfer.effectAllowed = 'copy';
+  }
+
+  function allowToolboxDrop(event: DragEvent) {
+    if (!event.dataTransfer.types.includes('application/x-virtulab-profile')) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+  }
+
+  async function dropToolboxDevice(event: DragEvent) {
+    const profileId = event.dataTransfer.getData('application/x-virtulab-profile');
+    const profile = catalog?.profiles.find(item => item.id === profileId);
+    if (!profile || !flow) return;
+    event.preventDefault();
+    await addDevice(profile, flow.screenToFlowPosition({ x: event.clientX, y: event.clientY }));
+  }
+
+  async function connectPorts(connection: Connection) {
+    if (!snapshot || !connection.sourceHandle || !connection.targetHandle) return;
+    setSaving(true);
+    try {
+      setSnapshot(await productApi.addCable(
+        snapshot.workspace.id, connection.sourceHandle, connection.targetHandle, selectedColor
+      ));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function updateDeviceOs(device: Device, osTemplate: string | null) {
+    if (!snapshot) return;
+    setSaving(true);
+    try {
+      setSnapshot(await productApi.updateDeviceOs(snapshot.workspace.id, device.id, osTemplate));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function chooseCableColor(color: string) {
+    setSelectedColor(color);
+    if (!snapshot || !selectedCableId) return;
+    setSaving(true);
+    try {
+      setSnapshot(await productApi.updateCableColor(snapshot.workspace.id, selectedCableId, color));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function overwriteCustomColor(index: number, color: string) {
+    const next = customColors.map((current, slot) => slot === index ? color : current);
+    setCustomColors(next);
+    localStorage.setItem('virtulab.customCableColors', JSON.stringify(next));
+    chooseCableColor(color);
+  }
+
+  async function removeSelectedCable() {
+    if (!snapshot || !selectedCableId) return;
+    setSaving(true);
+    try {
+      setSnapshot(await productApi.removeCable(snapshot.workspace.id, selectedCableId));
+      setSelectedCableId(null);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -180,17 +298,30 @@ function ProductCanvas() {
         edgeTypes={edgeTypes}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
+        onConnect={connectPorts}
+        onDragOver={allowToolboxDrop}
+        onDrop={dropToolboxDevice}
         onNodeDragStop={persistPosition}
-        onNodeClick={(_, node) => setSelectedDevice(node.data.device)}
-        onPaneClick={() => setSelectedDevice(null)}
+        onNodeClick={(_, node) => { setSelectedDevice(node.data.device); setSelectedCableId(null); }}
+        onEdgeClick={(_, edge) => {
+          setSelectedCableId(edge.id);
+          setSelectedDevice(null);
+          const cable = snapshot.cables.find(item => item.id === edge.id);
+          if (cable) setSelectedColor(cableColors[cable.color] ?? cable.color);
+        }}
+        onPaneClick={() => { setSelectedDevice(null); setSelectedCableId(null); }}
         onInit={setFlow}
         fitView
         fitViewOptions={{ padding: 0.35, maxZoom: 0.75 }}
         minZoom={0.08}
         maxZoom={2.4}
         deleteKeyCode={null}
-        nodesConnectable={false}
+        nodesConnectable
         connectionMode={ConnectionMode.Loose}
+        connectionLineType={ConnectionLineType.Bezier}
+        connectionLineStyle={{ stroke: selectedColor, strokeWidth: 5 }}
+        connectOnClick={false}
+        elevateNodesOnSelect={false}
         selectionOnDrag
         panOnScroll
         zoomOnDoubleClick={false}
@@ -230,6 +361,31 @@ function ProductCanvas() {
         ))}
       </section>
 
+      <section className="cable-color-picker" aria-label="Kolor kabla">
+        <span className="palette-label"><Cable />Kolor</span>
+        {builtinPalette.map(([color, name]) => (
+          <button
+            key={color}
+            className={`color-swatch ${selectedColor === color ? 'is-active' : ''}`}
+            style={{ '--swatch': color } as React.CSSProperties}
+            title={name}
+            onClick={() => chooseCableColor(color)}
+          />
+        ))}
+        <span className="palette-divider" />
+        {customColors.map((color, index) => (
+          <label
+            className={`color-swatch custom-swatch ${selectedColor === color ? 'is-active' : ''}`}
+            style={{ '--swatch': color } as React.CSSProperties}
+            title={`Kolor własny ${index + 1}`}
+            key={index}
+          >
+            <input type="color" value={color} onChange={event => overwriteCustomColor(index, event.target.value)} />
+            <span>{index + 1}</span>
+          </label>
+        ))}
+      </section>
+
       {toolboxOpen && (
         <aside className="floating-panel toolbox-panel">
           <header><strong>Urządzenia</strong><button className="icon-button" title="Zamknij" onClick={() => setToolboxOpen(false)}><X /></button></header>
@@ -238,7 +394,13 @@ function ProductCanvas() {
             {catalog.profiles.map(profile => {
               const Icon = profileIcons[profile.kind as keyof typeof profileIcons] ?? Box;
               return (
-                <button className="profile-item" key={profile.id} onClick={() => addDevice(profile)}>
+                <button
+                  className="profile-item"
+                  key={profile.id}
+                  draggable
+                  onDragStart={event => startToolboxDrag(event, profile)}
+                  onClick={() => addDevice(profile)}
+                >
                   <span style={{ background: profile.accent }}><Icon /></span>
                   <span><strong>{profile.name.pl}</strong><small>{profile.model}</small></span>
                   <Plus />
@@ -264,7 +426,20 @@ function ProductCanvas() {
             <div className="inspector-content">
               <label>Nazwa<input value={selectedDevice.name} readOnly /></label>
               <label>Profil<input value={selectedDevice.profile.model} readOnly /></label>
-              <label>System<input value={selectedTemplate?.name ?? selectedDevice.os_template ?? 'Bez systemu'} readOnly /></label>
+              {['workstation', 'server'].includes(selectedDevice.profile.kind) && (
+                <label>System
+                  <select
+                    className="nodrag"
+                    value={selectedDevice.os_template ?? ''}
+                    onChange={event => updateDeviceOs(selectedDevice, event.target.value || null)}
+                  >
+                    <option value="">Bez systemu</option>
+                    {catalog.templates.map(template => (
+                      <option value={template.id} key={template.id}>{template.name}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <dl>
                 <div><dt>Porty</dt><dd>{selectedDevice.ports.length}</dd></div>
                 <div><dt>Runtime</dt><dd>{selectedDevice.profile.runtime}</dd></div>
@@ -273,6 +448,8 @@ function ProductCanvas() {
               <button className="command-button" onClick={() => setInternalDevice(selectedDevice)}><Settings2 />Sprzęt i system</button>
               <button className="command-button danger" onClick={removeSelected}><Trash2 />Usuń urządzenie</button>
             </div>
+          ) : selectedCable ? (
+            <CableInspector cable={selectedCable} onRemove={removeSelectedCable} />
           ) : <div className="empty-inspector">Zaznacz urządzenie</div>}
         </aside>
       )}
@@ -287,7 +464,23 @@ function ProductCanvas() {
             <span><small>Urządzenie</small><strong>{internalDevice.name}</strong></span>
             <button className="icon-button" title="Zamknij" onClick={() => setInternalDevice(null)}><X /></button>
           </header>
-          <div className="motherboard">
+          {internalDevice.profile.kind === 'printer' ? (
+            <div className="printer-internal">
+              <div className="printer-chassis">
+                <Printer />
+                <span><small>Wirtualna drukarka</small><strong>IPP Everywhere</strong></span>
+              </div>
+              <div className="printed-output">
+                <FileOutput />
+                <span><small>Odbiornik wydruków</small><strong>0 dokumentów</strong></span>
+                <button className="command-button">Otwórz odbiornik</button>
+              </div>
+              <div className="printer-connectors">
+                <div><Network /><span><small>Sieć</small><strong>Ethernet</strong></span></div>
+                <div><Usb /><span><small>Połączenie lokalne</small><strong>USB-B</strong></span></div>
+              </div>
+            </div>
+          ) : <div className="motherboard">
             <div className="board-label">VIRTULAB Q35</div>
             <div className="cpu-socket"><small>CPU</small><strong>4 vCPU</strong></div>
             <div className="ram-bank"><small>DIMM</small><strong>6 GiB</strong></div>
@@ -298,7 +491,7 @@ function ProductCanvas() {
               ))}
               <button className="add-component"><Plus />Dodaj kartę</button>
             </div>
-          </div>
+          </div>}
         </section>
       )}
 

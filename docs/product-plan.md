@@ -32,6 +32,18 @@ The first milestone provides:
 9. migration of the current router, clients, ports and cable topology;
 10. keyboard-accessible selection, deletion and zoom controls.
 
+Interaction requirements:
+
+- devices can be dragged from any non-interactive part of their body; the status bar is not the only drag handle;
+- device profiles are dragged from the toolbox onto an exact canvas position, with click-to-add retained only as a keyboard fallback;
+- visible sockets are the cable drag targets, matching the stable lab's socket-to-socket interaction instead of exposing editor handles;
+- connected socket outlines use their cable's exact color;
+- operating systems are selected from the template catalog, never edited as an arbitrary string;
+- printer devices visibly expose a paper output tray, network port and USB-B port;
+- cable paths render above the chassis surface while port labels, sockets and device controls remain legible above the path;
+- the cable palette includes built-in colors and three persistent custom slots; choosing a new custom value overwrites that slot;
+- selecting a cable and choosing a palette color recolors the existing cable, while the active color is used for new cables.
+
 Cable runtime type is separate from cable presentation. Initial connector types are Ethernet copper, fiber/SFP, RJ45 console, USB-A/B/C, serial, power and visual-only. Hidden mode suppresses cable paths while retaining connected-port indicators.
 
 ## Device Profiles

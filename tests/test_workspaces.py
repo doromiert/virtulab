@@ -50,6 +50,25 @@ class WorkspaceStoreTests(unittest.TestCase):
             with self.assertRaisesRegex(WorkspaceError, "Unsupported cable mode"):
                 store.update_canvas("default", [], "diagonal")
 
+    def test_os_picker_and_cable_mutations_use_catalog_values(self):
+        with tempfile.TemporaryDirectory() as root:
+            store = self.make_store(root)
+            updated = store.update_device_os("default", "client1", "nixos")
+            client = next(device for device in updated["devices"] if device["id"] == "client1")
+            self.assertEqual(client["os_template"], "nixos")
+            with self.assertRaisesRegex(WorkspaceError, "Unknown OS template"):
+                store.update_device_os("default", "client1", "made-up-os")
+
+            connected = store.add_cable(
+                "default", "default:router:ether4", "default:client1:nic2", "#12abef"
+            )
+            cable = next(cable for cable in connected["cables"] if cable["port_a"] == "default:router:ether4")
+            self.assertEqual(cable["color"], "#12abef")
+            recolored = store.update_cable_color("default", cable["id"], "purple")
+            self.assertEqual(next(item for item in recolored["cables"] if item["id"] == cable["id"])["color"], "purple")
+            removed = store.remove_cable("default", cable["id"])
+            self.assertNotIn(cable["id"], {item["id"] for item in removed["cables"]})
+
 
 if __name__ == "__main__":
     unittest.main()

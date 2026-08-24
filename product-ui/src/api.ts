@@ -28,5 +28,24 @@ export const productApi = {
   removeDevice: (workspaceId: string, deviceId: string) =>
     request<WorkspaceSnapshot>(`/api/product/workspaces/${workspaceId}/devices/${deviceId}`, {
       method: 'DELETE'
+    }),
+  updateDeviceOs: (workspaceId: string, deviceId: string, osTemplate: string | null) =>
+    request<WorkspaceSnapshot>(`/api/product/workspaces/${workspaceId}/devices/${deviceId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ osTemplate })
+    }),
+  addCable: (workspaceId: string, portA: string, portB: string, color: string) =>
+    request<WorkspaceSnapshot>(`/api/product/workspaces/${workspaceId}/cables`, {
+      method: 'POST',
+      body: JSON.stringify({ portA, portB, color })
+    }),
+  updateCableColor: (workspaceId: string, cableId: string, color: string) =>
+    request<WorkspaceSnapshot>(`/api/product/workspaces/${workspaceId}/cables/${cableId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ color })
+    }),
+  removeCable: (workspaceId: string, cableId: string) =>
+    request<WorkspaceSnapshot>(`/api/product/workspaces/${workspaceId}/cables/${cableId}`, {
+      method: 'DELETE'
     })
 };
