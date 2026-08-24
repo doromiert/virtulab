@@ -3,3 +3,7 @@ __pycache__/
 .pytest_cache/
 result
 web/lucide.min.js
+product-ui/node_modules/
+product-ui/dist/
+*.tsbuildinfo
+*.sqlite3

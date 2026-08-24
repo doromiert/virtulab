@@ -1,5 +1,18 @@
 # MikroTik Cable Lab
 
+Product development is tracked on the `product` branch. See [the VirtuLab product plan](docs/product-plan.md) for the approved infinite-canvas, dynamic-device and multi-template architecture.
+
+The in-progress product canvas runs beside the stable interface:
+
+```bash
+python3 labctl.py serve --no-browser
+cd product-ui
+npm install
+npm run dev
+```
+
+Open `http://127.0.0.1:5173` for the product canvas and `http://127.0.0.1:8787` for the stable lab UI.
+
 A reproducible KVM/libvirt lab built with Nix flakes. It provides:
 
 - one RouterOS CHR `7.24.1` VM with a logical RB960PGS front panel;

@@ -26,6 +26,8 @@ from urllib.request import Request, urlopen
 from xml.etree import ElementTree
 from xml.sax.saxutils import escape
 
+from virtulab import WorkspaceError, WorkspaceStore
+
 
 LAB_PREFIX = "mikrolab-"
 TOPOLOGY_SCHEMA = 3
@@ -100,6 +102,7 @@ class Lab:
         self.applied_path = self.root / "applied-topology.json"
         self.storage_config_path = self.root / "storage.json"
         self.template_marker = self.root / "client-template-sealed"
+        self.product_store = WorkspaceStore(self.root / "virtulab.sqlite3")
         self._set_storage(self._configured_storage())
         self._lock = threading.RLock()
         self._setup_status_lock = threading.Lock()
@@ -1399,6 +1402,20 @@ class ApiHandler(SimpleHTTPRequestHandler):
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
+        try:
+            if parsed.path == "/api/product/catalog":
+                self.send_json(self.lab.product_store.catalog())
+                return
+            if parsed.path == "/api/product/workspaces":
+                self.send_json({"workspaces": self.lab.product_store.list_workspaces()})
+                return
+            match = re.fullmatch(r"/api/product/workspaces/([^/]+)", parsed.path)
+            if match:
+                self.send_json(self.lab.product_store.snapshot(unquote(match.group(1))))
+                return
+        except WorkspaceError as exc:
+            self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
         if parsed.path == "/api/setup/status":
             self.send_json(self.lab.setup_status())
             return
@@ -1411,19 +1428,42 @@ class ApiHandler(SimpleHTTPRequestHandler):
         super().do_GET()
 
     def do_PUT(self) -> None:
-        if urlparse(self.path).path != "/api/topology":
-            self.send_error(HTTPStatus.NOT_FOUND)
-            return
+        path = urlparse(self.path).path
         try:
+            match = re.fullmatch(r"/api/product/workspaces/([^/]+)/canvas", path)
+            if match:
+                body = self.read_json()
+                snapshot = self.lab.product_store.update_canvas(
+                    unquote(match.group(1)),
+                    body.get("positions", []),
+                    body.get("cableMode"),
+                )
+                self.send_json(snapshot)
+                return
+            if path != "/api/topology":
+                self.send_error(HTTPStatus.NOT_FOUND)
+                return
             body = self.read_json()
             self.lab.save_topology(body.get("connections", []))
             self.send_json({"ok": True, "topology": self.lab.load_topology()})
-        except LabError as exc:
+        except (LabError, WorkspaceError, KeyError, TypeError, ValueError) as exc:
             self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path
         try:
+            match = re.fullmatch(r"/api/product/workspaces/([^/]+)/devices", path)
+            if match:
+                body = self.read_json()
+                snapshot = self.lab.product_store.add_device(
+                    unquote(match.group(1)),
+                    str(body.get("profileId", "")),
+                    float(body.get("x", 0)),
+                    float(body.get("y", 0)),
+                    body.get("name"),
+                )
+                self.send_json(snapshot, HTTPStatus.CREATED)
+                return
             if path == "/api/setup/start":
                 body = self.read_json()
                 self.lab.start_web_setup(
@@ -1458,7 +1498,21 @@ class ApiHandler(SimpleHTTPRequestHandler):
                 self.send_json({"ok": True, "message": message})
                 return
             self.send_error(HTTPStatus.NOT_FOUND)
-        except LabError as exc:
+        except (LabError, WorkspaceError, TypeError, ValueError) as exc:
+            self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+
+    def do_DELETE(self) -> None:
+        path = urlparse(self.path).path
+        try:
+            match = re.fullmatch(r"/api/product/workspaces/([^/]+)/devices/([^/]+)", path)
+            if not match:
+                self.send_error(HTTPStatus.NOT_FOUND)
+                return
+            snapshot = self.lab.product_store.remove_device(
+                unquote(match.group(1)), unquote(match.group(2))
+            )
+            self.send_json(snapshot)
+        except WorkspaceError as exc:
             self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
 
 

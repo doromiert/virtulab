@@ -39,11 +39,15 @@
             let
               name = baseNameOf path;
             in
-            name != "win11.iso" && name != "__pycache__" && name != ".pytest_cache";
+              name != "win11.iso"
+              && name != "__pycache__"
+              && name != ".pytest_cache"
+              && name != "node_modules"
+              && name != "dist";
         };
         installPhase = ''
           mkdir -p $out
-          cp -R labctl.py web docs tests $out/
+          cp -R labctl.py web docs tests virtulab product-ui $out/
           cp ${lucide} $out/web/lucide.min.js
         '';
       };
@@ -109,7 +113,7 @@
           '';
 
       devShells.${system}.default = pkgs.mkShell {
-        packages = runtimeInputs ++ [ pkgs.nixfmt ];
+        packages = runtimeInputs ++ [ pkgs.nixfmt pkgs.nodejs ];
         shellHook = ''
           export MIKROTIK_LAB_SOURCE=$PWD
           export MIKROTIK_CHR_ARCHIVE=${chrImage}
