@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Laboratorium kablowe MikroTik</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">LOGICZNA SZAFA SZKOLENIOWA RB960PGS</p>
+      <h1>Laboratorium kablowe MikroTik</h1>
+    </div>
+    <div class="lab-actions">
+      <span id="save-state" class="save-state">Topologia zsynchronizowana</span>
+      <button id="setup-mode" title="Automatyczna konfiguracja laboratorium" aria-label="Automatyczna konfiguracja laboratorium"><i data-lucide="download"></i><span>Tryb konfiguracji</span></button>
+      <button id="setup-help" title="Instrukcja konfiguracji maszyn" aria-label="Instrukcja konfiguracji maszyn"><i data-lucide="circle-help"></i><span>Konfiguracja VM</span></button>
+      <button id="apply" class="primary">Zastosuj okablowanie</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="workbench" aria-label="Wirtualny stół sieciowy">
+      <div class="bench-toolbar">
+        <div class="color-picker" role="group" aria-label="Kolor kabla">
+          <span>Szpula kabla</span>
+          <button class="swatch selected" data-color="yellow" title="Żółty kabel"><span></span></button>
+          <button class="swatch" data-color="blue" title="Niebieski kabel"><span></span></button>
+          <button class="swatch" data-color="red" title="Czerwony kabel"><span></span></button>
+          <button class="swatch" data-color="green" title="Zielony kabel"><span></span></button>
+          <button class="swatch" data-color="black" title="Czarny kabel"><span></span></button>
+        </div>
+        <p>Przeciągnij kabel między gniazdami. Zaznacz kabel i naciśnij Delete, aby go odłączyć.</p>
+      </div>
+
+      <div id="rack" class="rack">
+        <svg id="cables" class="cables" aria-hidden="true">
+          <defs>
+            <filter id="cable-shadow" x="-30%" y="-30%" width="160%" height="180%">
+              <feDropShadow dx="0" dy="5" stdDeviation="4" flood-opacity=".48"/>
+            </filter>
+          </defs>
+          <g id="cable-layer"></g>
+          <path id="preview-cable" class="cable preview" d="" hidden></path>
+        </svg>
+
+        <aside class="wall-panel" aria-label="Gniazdo WAN">
+          <div><strong>WAN</strong><span>INTERNET / NAT</span></div>
+          <button class="port wall-port" data-endpoint="wan:uplink" title="Gniazdo WAN z NAT i DHCP"><span class="socket rj45"></span><b>WAN</b></button>
+        </aside>
+
+        <article class="device router" data-vm="router">
+          <div class="device-label">
+            <span class="brand">MikroTik</span>
+            <strong>hEX PoE</strong>
+            <small>Profil logiczny RB960PGS / CHR 7.24.1</small>
+          </div>
+          <div class="router-face">
+            <div class="status-lamps"><i></i><span>PWR</span><i></i><span>USR</span></div>
+            <div class="port-bank">
+              <button class="port sfp-port" data-endpoint="router:sfp" title="Logiczny port SFP"><span class="socket sfp"></span><b>SFP</b></button>
+              <button class="port" data-endpoint="router:ether1" title="ether1 / wejście PoE w urządzeniu fizycznym"><span class="socket rj45"></span><b>1</b></button>
+              <button class="port poe" data-endpoint="router:ether2" title="ether2 / wyjście PoE w urządzeniu fizycznym"><span class="socket rj45"></span><b>2</b></button>
+              <button class="port poe" data-endpoint="router:ether3" title="ether3 / wyjście PoE w urządzeniu fizycznym"><span class="socket rj45"></span><b>3</b></button>
+              <button class="port poe" data-endpoint="router:ether4" title="ether4 / wyjście PoE w urządzeniu fizycznym"><span class="socket rj45"></span><b>4</b></button>
+              <button class="port poe" data-endpoint="router:ether5" title="ether5 / wyjście PoE w urządzeniu fizycznym"><span class="socket rj45"></span><b>5</b></button>
+            </div>
+          </div>
+          <div class="device-controls"></div>
+        </article>
+
+        <article class="device client client-one" data-vm="client1">
+          <div class="tower"><span class="power-light"></span><span class="vent"></span></div>
+          <div class="client-copy"><strong>KLIENT 01</strong><span>Windows 11 / WinBox</span></div>
+          <div class="client-nics">
+            <button class="port client-port" data-endpoint="client1:ethernet" title="Klient 01, karta sieciowa 1"><span class="socket rj45"></span><b>NIC 1</b></button>
+            <button class="port client-port" data-endpoint="client1:ethernet2" title="Klient 01, karta sieciowa 2"><span class="socket rj45"></span><b>NIC 2</b></button>
+          </div>
+          <div class="device-controls"></div>
+        </article>
+
+        <article class="device client client-two" data-vm="client2">
+          <div class="tower"><span class="power-light"></span><span class="vent"></span></div>
+          <div class="client-copy"><strong>KLIENT 02</strong><span>Windows 11 / WinBox</span></div>
+          <div class="client-nics">
+            <button class="port client-port" data-endpoint="client2:ethernet" title="Klient 02, karta sieciowa 1"><span class="socket rj45"></span><b>NIC 1</b></button>
+            <button class="port client-port" data-endpoint="client2:ethernet2" title="Klient 02, karta sieciowa 2"><span class="socket rj45"></span><b>NIC 2</b></button>
+          </div>
+          <div class="device-controls"></div>
+        </article>
+      </div>
+    </section>
+
+    <section class="status-strip">
+      <div><span class="status-dot" id="host-dot"></span><strong>libvirt</strong><small id="host-status">Sprawdzanie hosta</small></div>
+      <div><strong>Model warstwy 2</strong><small>Jeden izolowany most na każdy fizyczny kabel</small></div>
+      <div><strong>Granica symulacji</strong><small>Bez wirtualnego PoE, optyki SFP i offloadu QCA8337</small></div>
+      <a href="https://mikrotik.com/download/chr" target="_blank" rel="noreferrer">Oficjalne pliki CHR</a>
+    </section>
+  </main>
+
+  <dialog id="confirm-dialog">
+    <form method="dialog">
+      <h2 id="dialog-title">Przywrócić maszynę?</h2>
+      <p id="dialog-copy"></p>
+      <div><button value="cancel">Anuluj</button><button value="confirm" class="danger">Przywróć maszynę</button></div>
+    </form>
+  </dialog>
+  <dialog id="setup-mode-dialog" class="setup-mode-dialog">
+    <div class="setup-heading">
+      <div>
+        <p class="eyebrow">AUTOMATYCZNE PRZYGOTOWANIE</p>
+        <h2>Tryb konfiguracji</h2>
+      </div>
+      <button id="close-setup-mode" class="icon-button" title="Zamknij" aria-label="Zamknij"><i data-lucide="x"></i></button>
+    </div>
+    <div class="setup-mode-content">
+      <p>System pobierze wieloedycyjny obraz Windows 11 x64 bezpośrednio z serwerów Microsoft, przygotuje RouterOS i uruchomi jedną maszynę szablonową z dostępem NAT.</p>
+      <label class="setup-field" for="windows-language">
+        <span>Język obrazu Windows</span>
+        <select id="windows-language">
+          <option value="Polish">Polski</option>
+          <option value="English">English (US)</option>
+          <option value="English International">English International</option>
+        </select>
+      </label>
+      <details class="setup-advanced">
+        <summary><i data-lucide="sliders-horizontal"></i><span>Opcje zaawansowane</span></summary>
+        <div class="setup-advanced-content">
+          <fieldset class="source-picker">
+            <legend>Źródło automatycznego pobierania</legend>
+            <label><input type="radio" name="download-source" value="microsoft" checked><span>Microsoft</span></label>
+            <label><input type="radio" name="download-source" value="massgrave"><span>Massgrave</span></label>
+            <label><input type="radio" name="download-source" value="ntriver"><span>NTriver</span></label>
+          </fieldset>
+          <p id="mirror-warning" class="setup-warning" hidden></p>
+          <label class="setup-field" for="existing-iso-path">
+            <span>Istniejący obraz ISO</span>
+            <input id="existing-iso-path" list="iso-candidates" type="text" placeholder="/bezwzględna/ścieżka/windows.iso" spellcheck="false">
+            <datalist id="iso-candidates"></datalist>
+          </label>
+          <button id="start-local-setup"><i data-lucide="hard-drive"></i><span>Użyj istniejącego ISO</span></button>
+          <p class="setup-warning">Lokalny obraz omija pobieranie Microsoft. Upewnij się, że pochodzi z zaufanego źródła i samodzielnie zweryfikuj jego sumę SHA-256.</p>
+        </div>
+      </details>
+      <div id="setup-progress" class="setup-progress" hidden>
+        <div class="setup-progress-track"><span id="setup-progress-bar"></span></div>
+        <div class="setup-progress-meta"><strong id="setup-phase">Gotowy</strong><span id="setup-bytes"></span></div>
+        <p id="setup-message">Gotowy do konfiguracji</p>
+      </div>
+      <div class="setup-mode-actions">
+        <button id="start-web-setup" class="primary"><i data-lucide="download"></i><span>Pobierz i rozpocznij</span></button>
+        <button id="open-template-console" hidden><i data-lucide="monitor"></i><span>Otwórz konsolę</span></button>
+        <button id="seal-template" class="primary" hidden><i data-lucide="save"></i><span>Zapisz szablon</span></button>
+      </div>
+      <p class="setup-warning">Link ISO jest generowany przez oficjalny konektor Microsoft i wygasa po 24 godzinach. Pobranie obrazu nie zapewnia licencji Windows.</p>
+      <p class="link-row"><a href="https://www.microsoft.com/software-download/windows11" target="_blank" rel="noreferrer">Oficjalna strona pobierania Windows 11</a><a href="https://www.microsoft.com/licensing/terms/productoffering/WindowsDesktopOperatingSystem/all" target="_blank" rel="noreferrer">Warunki licencyjne</a></p>
+    </div>
+  </dialog>
+  <dialog id="setup-dialog" class="setup-dialog">
+    <div class="setup-heading">
+      <div>
+        <p class="eyebrow">PIERWSZE URUCHOMIENIE</p>
+        <h2>Konfiguracja maszyn wirtualnych</h2>
+      </div>
+      <button id="close-setup" class="icon-button" title="Zamknij instrukcję" aria-label="Zamknij instrukcję"><i data-lucide="x"></i></button>
+    </div>
+    <div class="setup-content">
+      <p class="setup-lead">Wybierz sposób uruchomienia. Obraz ISO możesz dostarczyć ręcznie albo pobrać bezpośrednio z Microsoft przyciskiem „Tryb konfiguracji” na górnym pasku.</p>
+      <div class="setup-tabs" role="tablist" aria-label="Sposób uruchomienia">
+        <button class="setup-tab active" role="tab" aria-selected="true" aria-controls="setup-nix" data-setup-tab="nix"><i data-lucide="snowflake"></i><span>Nix / NixOS</span></button>
+        <button class="setup-tab" role="tab" aria-selected="false" aria-controls="setup-native" data-setup-tab="native"><i data-lucide="terminal"></i><span>Linux bez Nix</span></button>
+      </div>
+      <section id="setup-nix" role="tabpanel" data-setup-panel="nix">
+      <ol class="setup-steps">
+        <li>
+          <div class="step-number">01</div>
+          <div>
+            <h3>Przygotuj hosta</h3>
+            <p>Włącz w UEFI wirtualizację sprzętową. Host Linux musi mieć KVM, libvirt, OVMF i emulator TPM. Na NixOS dodaj poniższą konfigurację, przebuduj system, a następnie wyloguj się i zaloguj ponownie.</p>
+            <div class="command-block"><code>{
+  virtualisation.libvirtd = {
+    enable = true;
+    qemu.swtpm.enable = true;
+  };
+  programs.virt-manager.enable = true;
+  users.users.TWOJ_UZYTKOWNIK.extraGroups = [ "libvirtd" ];
+}</code><button class="copy-command icon-button" title="Kopiuj konfigurację" aria-label="Kopiuj konfigurację"><i data-lucide="copy"></i></button></div>
+            <p class="link-row"><a href="https://wiki.nixos.org/wiki/Libvirt" target="_blank" rel="noreferrer">Dokumentacja libvirt w NixOS</a><a href="https://www.linux-kvm.org/page/Main_Page" target="_blank" rel="noreferrer">Dokumentacja KVM</a></p>
+          </div>
+        </li>
+        <li>
+          <div class="step-number">02</div>
+          <div>
+            <h3>Pobierz obraz Windows 11</h3>
+            <p>Pobierz oficjalny obraz x64, nazwij go <code>win11.iso</code> i przechowuj poza katalogiem projektu, aby Nix nie kopiował wielogigabajtowego ISO do swojego magazynu.</p>
+            <p class="link-row"><a href="https://www.microsoft.com/software-download/windows11" target="_blank" rel="noreferrer">Oficjalny obraz Windows 11</a><a href="https://www.microsoft.com/licensing/terms/productoffering/WindowsDesktopOperatingSystem/all" target="_blank" rel="noreferrer">Warunki licencyjne Microsoft</a></p>
+          </div>
+        </li>
+        <li>
+          <div class="step-number">03</div>
+          <div>
+            <h3>Przygotuj i uruchom laboratorium</h3>
+            <p>Uruchom polecenia w katalogu projektu, podając bezwzględną ścieżkę do ISO. Nix pobierze i sprawdzi przypięte wersje CHR, WinBox i Lucide, utworzy dyski oraz zdefiniuje trzy maszyny w libvirt.</p>
+            <div class="command-block"><code>MIKROTIK_WIN11_ISO=/pełna/ścieżka/win11.iso \
+MIKROTIK_VM_STORAGE=/ścieżka/na/szybkim/dysku \
+nix run .#setup
+nix run .#ui</code><button class="copy-command icon-button" title="Kopiuj polecenia" aria-label="Kopiuj polecenia"><i data-lucide="copy"></i></button></div>
+            <p class="link-row"><a href="https://mikrotik.com/download/chr" target="_blank" rel="noreferrer">Oficjalne obrazy RouterOS CHR</a><a href="https://mikrotik.com/download/winbox" target="_blank" rel="noreferrer">Oficjalny WinBox</a><a href="https://help.mikrotik.com/docs/spaces/ROS/pages/18350234/Cloud+Hosted+Router+CHR" target="_blank" rel="noreferrer">Dokumentacja CHR i licencji</a></p>
+          </div>
+        </li>
+      </ol>
+      </section>
+      <section id="setup-native" role="tabpanel" data-setup-panel="native" hidden>
+      <ol class="setup-steps">
+        <li>
+          <div class="step-number">01</div>
+          <div>
+            <h3>Zainstaluj zależności hosta</h3>
+            <p>Włącz w UEFI wirtualizację sprzętową, a następnie użyj polecenia właściwego dla dystrybucji.</p>
+            <p class="command-label">Debian / Ubuntu</p>
+            <div class="command-block"><code>sudo apt update
+sudo apt install qemu-kvm qemu-utils libvirt-daemon-system libvirt-clients virt-viewer swtpm ovmf xorriso python3 curl
+sudo usermod -aG libvirt,kvm "$USER"</code><button class="copy-command icon-button" title="Kopiuj polecenia" aria-label="Kopiuj polecenia"><i data-lucide="copy"></i></button></div>
+            <p class="command-label">Fedora</p>
+            <div class="command-block"><code>sudo dnf install @virtualization virt-viewer swtpm edk2-ovmf xorriso python3 curl
+sudo usermod -aG libvirt,kvm "$USER"</code><button class="copy-command icon-button" title="Kopiuj polecenia" aria-label="Kopiuj polecenia"><i data-lucide="copy"></i></button></div>
+            <p class="command-label">openSUSE Leap / Tumbleweed</p>
+            <div class="command-block"><code>sudo zypper install -t pattern kvm_server kvm_tools
+sudo zypper install libvirt-client virt-viewer swtpm swtpm-tools ovmf xorriso python3 curl
+sudo usermod -aG libvirt,kvm "$USER"</code><button class="copy-command icon-button" title="Kopiuj polecenia" aria-label="Kopiuj polecenia"><i data-lucide="copy"></i></button></div>
+            <p class="link-row"><a href="https://doc.opensuse.org/documentation/leap/virtualization/html/book-virtualization/cha-libvirt-host.html" target="_blank" rel="noreferrer">Oficjalna dokumentacja libvirt openSUSE</a></p>
+            <p class="command-label">Arch Linux</p>
+            <div class="command-block"><code>sudo pacman -S qemu-full libvirt virt-viewer swtpm edk2-ovmf xorriso dnsmasq python curl
+sudo usermod -aG libvirt,kvm "$USER"</code><button class="copy-command icon-button" title="Kopiuj polecenia" aria-label="Kopiuj polecenia"><i data-lucide="copy"></i></button></div>
+            <div class="command-block"><code>sudo systemctl enable --now libvirtd
+virsh -c qemu:///system list --all</code><button class="copy-command icon-button" title="Kopiuj polecenia" aria-label="Kopiuj polecenia"><i data-lucide="copy"></i></button></div>
+            <p>Po dodaniu grup wyloguj się i zaloguj ponownie. Polecenie <code>virsh</code> musi działać bez <code>sudo</code>.</p>
+          </div>
+        </li>
+        <li>
+          <div class="step-number">02</div>
+          <div>
+            <h3>Pobierz ISO i przypięte komponenty</h3>
+            <p>Pobierz własny obraz Windows 11 z Microsoft. Następnie, w katalogu projektu, pobierz oficjalne obrazy MikroTik i lokalny build ikon.</p>
+            <p class="link-row"><a href="https://www.microsoft.com/software-download/windows11" target="_blank" rel="noreferrer">Oficjalny obraz Windows 11</a><a href="https://mikrotik.com/download/chr" target="_blank" rel="noreferrer">RouterOS CHR</a><a href="https://mikrotik.com/download/winbox" target="_blank" rel="noreferrer">WinBox</a></p>
+            <div class="command-block"><code>mkdir -p "$HOME/.cache/mikrotik-cable-lab"
+curl -fL https://download.mikrotik.com/routeros/7.24.1/chr-7.24.1.img.zip -o "$HOME/.cache/mikrotik-cable-lab/chr-7.24.1.img.zip"
+curl -fL https://download.mikrotik.com/routeros/winbox/4.3/WinBox_Windows.zip -o "$HOME/.cache/mikrotik-cable-lab/WinBox_Windows.zip"
+curl -fL https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js -o web/lucide.min.js</code><button class="copy-command icon-button" title="Kopiuj polecenia pobierania" aria-label="Kopiuj polecenia pobierania"><i data-lucide="copy"></i></button></div>
+            <div class="command-block"><code>printf '%s  %s\n' \
+  50345f0197164321f1c6c933cd2a92b94222e7df76311b22b46adc3eca7a1aa8 "$HOME/.cache/mikrotik-cable-lab/chr-7.24.1.img.zip" \
+  f2dc282abe7e1b8f63b13b2ba6a893b6d1c16671e2c8f8a6a5a9d3956f36100b "$HOME/.cache/mikrotik-cable-lab/WinBox_Windows.zip" \
+  3411692820cb8d47543f69496aa25fd603a358f4498046f41c508a5a3342210e web/lucide.min.js | sha256sum --check</code><button class="copy-command icon-button" title="Kopiuj kontrolę SHA-256" aria-label="Kopiuj kontrolę SHA-256"><i data-lucide="copy"></i></button></div>
+          </div>
+        </li>
+        <li>
+          <div class="step-number">03</div>
+          <div>
+            <h3>Przygotuj i uruchom laboratorium</h3>
+            <div class="command-block"><code>MIKROTIK_WIN11_ISO=/pełna/ścieżka/win11.iso \
+MIKROTIK_VM_STORAGE=/ścieżka/na/szybkim/dysku \
+MIKROTIK_CHR_ARCHIVE="$HOME/.cache/mikrotik-cable-lab/chr-7.24.1.img.zip" \
+MIKROTIK_WINBOX_ARCHIVE="$HOME/.cache/mikrotik-cable-lab/WinBox_Windows.zip" \
+python3 labctl.py prepare
+python3 labctl.py serve</code><button class="copy-command icon-button" title="Kopiuj polecenia uruchomienia" aria-label="Kopiuj polecenia uruchomienia"><i data-lucide="copy"></i></button></div>
+            <p>Serwer otworzy UI pod adresem <code>http://127.0.0.1:8787</code>. Node i npm nie są wymagane.</p>
+          </div>
+        </li>
+      </ol>
+      </section>
+      <p class="setup-section-label">KROKI WSPÓLNE</p>
+      <ol class="setup-steps common-steps">
+        <li>
+          <div class="step-number">04</div>
+          <div>
+            <h3>Uruchom RouterOS CHR</h3>
+            <p>RouterOS nie wymaga instalacji z ISO. CHR jest gotowym dyskiem systemowym pobranym podczas przygotowania laboratorium. Przy routerze naciśnij ikonę uruchomienia <i data-lucide="play"></i>, a następnie ikonę konsoli <i data-lucide="monitor"></i>. Zaloguj się jako <code>admin</code>; świeży obraz CHR nie ma hasła. Ustaw własne hasło natychmiast po pierwszym logowaniu.</p>
+            <div class="command-block"><code>/user set [find name=admin] password="TU_WPISZ_UNIKALNE_HASLO"
+/system identity set name=R1-INF02
+/interface ethernet set [find default-name=ether6] name=sfp1</code><button class="copy-command icon-button" title="Kopiuj konfigurację RouterOS" aria-label="Kopiuj konfigurację RouterOS"><i data-lucide="copy"></i></button></div>
+            <p>Szósty interfejs CHR jest pokazany w UI jako port SFP, dlatego polecenie zmienia jego nazwę z <code>ether6</code> na <code>sfp1</code>. Po ustawieniu hasła możesz zamknąć konsolę.</p>
+            <p>Aby użyć WinBox, uruchom router i klienta podłączonego do jednego segmentu. W WinBox otwórz kartę <strong>Neighbors</strong>, wybierz router po adresie MAC i zaloguj się jako <code>admin</code> z ustawionym hasłem.</p>
+            <p class="link-row"><a href="https://help.mikrotik.com/docs/spaces/ROS/pages/328151/First+Time+Configuration" target="_blank" rel="noreferrer">Pierwsza konfiguracja RouterOS</a><a href="https://help.mikrotik.com/docs/spaces/ROS/pages/328129/WinBox" target="_blank" rel="noreferrer">Dokumentacja WinBox</a><a href="https://help.mikrotik.com/docs/spaces/ROS/pages/18350234/Cloud+Hosted+Router+CHR#CloudHostedRouter,CHR-CHRLicensing" target="_blank" rel="noreferrer">Licencje CHR</a></p>
+            <p class="setup-warning">Darmowa licencja CHR udostępnia funkcje RouterOS, ale ogranicza wysyłanie do 1 Mb/s na interfejs. Do ćwiczeń konfiguracyjnych wystarcza; testy wydajności wymagają licencji próbnej lub P1.</p>
+          </div>
+        </li>
+        <li>
+          <div class="step-number">05</div>
+          <div>
+            <h3>Zainstaluj jeden szablon Windows</h3>
+            <p>Setup automatycznie otworzy jedną maszynę szablonową z dostępem NAT i zatrzyma się w terminalu. Zainstaluj Windows 11, otwórz płytę <code>WINTOOLS</code>, uruchom jako administrator <code>Install-WinBox.cmd</code>, a następnie doinstaluj dowolne potrzebne programy. Instalator WINTOOLS rejestruje też jednorazowe automatyczne nazwanie klonów jako <code>CLIENT01</code> i <code>CLIENT02</code>.</p>
+          </div>
+        </li>
+        <li>
+          <div class="step-number">06</div>
+          <div>
+            <h3>Zapisz wspólny punkt przywracania</h3>
+            <p>Wyłącz szablon normalnie z menu Start. Opcjonalnie wcześniej uruchom <code>Sysprep.exe /generalize /oobe /shutdown</code>, jeśli klienci mają otrzymać różne tożsamości Windows. Gdy VM będzie całkowicie wyłączona, wróć do terminala setupu i naciśnij Enter.</p>
+            <p>Skrypt zabezpieczy szablon przed zapisem i utworzy z niego dwa małe dyski robocze. Ikona <i data-lucide="rotate-ccw"></i> obu klientów będzie odtwarzać właśnie ten wspólny stan.</p>
+            <p class="setup-warning">Wyłącz szyfrowanie urządzenia albo zachowaj klucze odzyskiwania TPM przed zapisaniem szablonu.</p>
+          </div>
+        </li>
+        <li>
+          <div class="step-number">07</div>
+          <div>
+            <h3>Podłącz sieć</h3>
+            <p>Wyłącz wszystkie VM przed użyciem „Zastosuj okablowanie”. Gniazdo ścienne WAN udostępnia NAT i DHCP w sieci <code>172.31.255.0/24</code>. Po podłączeniu routera dodaj klienta DHCP na odpowiednim interfejsie RouterOS.</p>
+            <div class="command-block single-line"><code>/ip dhcp-client add interface=ether1 disabled=no</code><button class="copy-command icon-button" title="Kopiuj polecenie RouterOS" aria-label="Kopiuj polecenie RouterOS"><i data-lucide="copy"></i></button></div>
+            <p>Sprawdź adres i trasę domyślną poleceniami <code>/ip dhcp-client print detail</code> oraz <code>/ip route print</code>. Przywrócenie routera w UI usuwa wszystkie zmiany i odtwarza oficjalny, czysty obraz CHR.</p>
+          </div>
+        </li>
+      </ol>
+    </div>
+  </dialog>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="lucide.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

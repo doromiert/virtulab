@@ -1,0 +1,5 @@
+*.iso
+__pycache__/
+.pytest_cache/
+result
+web/lucide.min.js
