@@ -1,4 +1,4 @@
-import { useEffect, useState, type DragEvent } from 'react';
+import { useEffect, useRef, useState, type DragEvent } from 'react';
 import {
   Background,
   BackgroundVariant,
@@ -8,10 +8,12 @@ import {
   MiniMap,
   ReactFlow,
   ReactFlowProvider,
+  type NodeChange,
   useEdgesState,
   useNodesState,
   type Edge,
   type Connection,
+  type OnConnectStartParams,
   type Node,
   type OnNodeDrag,
   type ReactFlowInstance
@@ -22,7 +24,8 @@ import {
   Cable,
   ChevronLeft,
   ChevronRight,
-  FileOutput,
+  Files,
+  HardDrive,
   Languages,
   Library,
   MonitorCog,
@@ -34,16 +37,22 @@ import {
   Server,
   Settings2,
   Trash2,
-  Usb,
   X
 } from 'lucide-react';
 import { productApi } from './api';
 import { CableEdge } from './CableEdge';
 import { DeviceNode, type DeviceNodeData } from './DeviceNode';
-import type { Cable as WorkspaceCable, CableMode, Catalog, Device, DeviceProfile, WorkspaceSnapshot } from './types';
+import { DeviceUnderlay } from './DeviceUnderlay';
+import { HardwareEditor } from './HardwareEditor';
+import { OsPicker } from './OsPicker';
+import { OsTool, type OsProjectDraft } from './OsTool';
+import { PrintDocumentNode, type PrintDocumentNodeData } from './PrintDocumentNode';
+import { RackNode, type RackNodeData } from './RackNode';
+import { RealisticConnectionLine } from './RealisticConnectionLine';
+import type { Cable as WorkspaceCable, CableMode, Catalog, Device, DeviceProfile, OsProject, PrintDocument, WorkspaceSnapshot } from './types';
 import './styles.css';
 
-const nodeTypes = { device: DeviceNode };
+const nodeTypes = { device: DeviceNode, underlay: DeviceUnderlay, rack: RackNode, document: PrintDocumentNode };
 const edgeTypes = { cable: CableEdge };
 const cableColors: Record<string, string> = {
   yellow: '#f4c430', blue: '#3488db', red: '#dc4641', green: '#4ea85c', black: '#25282a',
@@ -64,7 +73,13 @@ function loadCustomColors(): string[] {
   return ['#b15cff', '#ff5ca8', '#35d0ba'];
 }
 
-function toFlow(snapshot: WorkspaceSnapshot, onOpen: (device: Device) => void) {
+function toFlow(
+  snapshot: WorkspaceSnapshot,
+  onOpen: (device: Device) => void,
+  onStoreDocument: (document: PrintDocument) => void,
+  onAction: (device: Device, action: string) => void,
+  runtimeStates: Record<string, string>
+) {
   const portOwners = new Map<string, string>();
   const connectedPortColors: Record<string, string> = {};
   snapshot.devices.forEach(device => device.ports.forEach(port => portOwners.set(port.id, device.id)));
@@ -73,13 +88,46 @@ function toFlow(snapshot: WorkspaceSnapshot, onOpen: (device: Device) => void) {
     connectedPortColors[cable.port_a] = color;
     connectedPortColors[cable.port_b] = color;
   });
-  const nodes: Array<Node<DeviceNodeData>> = snapshot.devices.map(device => ({
-    id: device.id,
-    type: 'device',
-    position: { x: device.x, y: device.y },
-    zIndex: 1,
-    data: { device, connectedPortColors, onOpen }
-  }));
+  const nodes: Node[] = [];
+  snapshot.devices.forEach(device => {
+    if (device.profile.kind === 'rack') {
+      nodes.push({
+        id: device.id,
+        type: 'rack',
+        position: { x: device.x, y: device.y },
+        zIndex: 0,
+        data: { device, mounted: snapshot.devices.filter(item => item.hardware.rackId === device.id) } satisfies RackNodeData
+      });
+      return;
+    }
+    const runtimeDevice = { ...device, status: runtimeStates[device.id] ?? device.status };
+    nodes.push({
+      id: `underlay:${device.id}`,
+      type: 'underlay',
+      position: { x: device.x, y: device.y },
+      zIndex: 1,
+      draggable: false,
+      selectable: false,
+      focusable: false,
+      data: { device: runtimeDevice }
+    });
+    nodes.push({
+      id: device.id,
+      type: 'device',
+      position: { x: device.x, y: device.y },
+      zIndex: 3,
+      data: { device: runtimeDevice, connectedPortColors, onOpen, onAction } satisfies DeviceNodeData
+    });
+  });
+  snapshot.documents.filter(document => document.location === 'canvas').forEach(document => {
+    nodes.push({
+      id: `document:${document.id}`,
+      type: 'document',
+      position: { x: document.x, y: document.y },
+      zIndex: 4,
+      data: { document, onStore: onStoreDocument } satisfies PrintDocumentNodeData
+    });
+  });
   const edges: Edge[] = snapshot.cables.flatMap(cable => {
     const source = portOwners.get(cable.port_a);
     const target = portOwners.get(cable.port_b);
@@ -118,7 +166,7 @@ function CableInspector({ cable, onRemove }: { cable: WorkspaceCable; onRemove: 
 function ProductCanvas() {
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [snapshot, setSnapshot] = useState<WorkspaceSnapshot | null>(null);
-  const [nodes, setNodes, onNodesChange] = useNodesState<Node<DeviceNodeData>>([]);
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
   const [selectedCableId, setSelectedCableId] = useState<string | null>(null);
@@ -127,11 +175,36 @@ function ProductCanvas() {
   const [internalDevice, setInternalDevice] = useState<Device | null>(null);
   const [toolboxOpen, setToolboxOpen] = useState(() => window.innerWidth > 900);
   const [inspectorOpen, setInspectorOpen] = useState(() => window.innerWidth > 900);
-  const [flow, setFlow] = useState<ReactFlowInstance<Node<DeviceNodeData>, Edge> | null>(null);
+  const [flow, setFlow] = useState<ReactFlowInstance<Node, Edge> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [osPickerDevice, setOsPickerDevice] = useState<Device | null>(null);
+  const [osToolOpen, setOsToolOpen] = useState(false);
+  const [printTrayOpen, setPrintTrayOpen] = useState(false);
+  const [runtimeStates, setRuntimeStates] = useState<Record<string, string>>({});
+  const cableDrag = useRef<{ cable: WorkspaceCable | null; completed: boolean }>({ cable: null, completed: false });
 
-  const openDevice = (device: Device) => setInternalDevice(device);
+  const openDevice = (device: Device) => {
+    if (['workstation', 'server'].includes(device.profile.kind)) setInternalDevice(device);
+  };
+
+  async function storeDocument(document: PrintDocument) {
+    if (!snapshot) return;
+    setSnapshot(await productApi.moveDocument(snapshot.workspace.id, document.id, 'hud'));
+  }
+
+  async function refreshRuntimeStates() {
+    try { setRuntimeStates((await productApi.stableState()).vms); } catch { /* Stable lab may not be prepared yet. */ }
+  }
+
+  async function deviceAction(device: Device, action: string) {
+    try {
+      await productApi.vmAction(device.id, action);
+      window.setTimeout(refreshRuntimeStates, action === 'shutdown' ? 1200 : 250);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
 
   useEffect(() => {
     Promise.all([productApi.catalog(), productApi.workspace('default')])
@@ -143,24 +216,60 @@ function ProductCanvas() {
   }, []);
 
   useEffect(() => {
+    refreshRuntimeStates();
+    const timer = window.setInterval(refreshRuntimeStates, 3000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
     if (!snapshot) return;
-    const flowState = toFlow(snapshot, openDevice);
+    const flowState = toFlow(snapshot, openDevice, storeDocument, deviceAction, runtimeStates);
     setNodes(flowState.nodes);
-    setEdges(flowState.edges);
+    setEdges(cableDrag.current.cable && !cableDrag.current.completed
+      ? flowState.edges.filter(edge => edge.id !== cableDrag.current.cable?.id)
+      : flowState.edges);
     if (selectedDevice) {
       setSelectedDevice(snapshot.devices.find(device => device.id === selectedDevice.id) ?? null);
     }
-  }, [snapshot]);
+    if (internalDevice) setInternalDevice(snapshot.devices.find(device => device.id === internalDevice.id) ?? null);
+    if (osPickerDevice) setOsPickerDevice(snapshot.devices.find(device => device.id === osPickerDevice.id) ?? null);
+  }, [snapshot, runtimeStates]);
 
   const selectedCable = snapshot?.cables.find(cable => cable.id === selectedCableId) ?? null;
 
-  const persistPosition: OnNodeDrag<Node<DeviceNodeData>> = async (_, node) => {
+  function handleNodesChange(changes: NodeChange<Node>[]) {
+    const mirrored = changes.flatMap(change => {
+      if (change.type !== 'position' || change.id.startsWith('underlay:')) return [change];
+      return [change, { ...change, id: `underlay:${change.id}` }];
+    });
+    onNodesChange(mirrored);
+  }
+
+  const persistPosition: OnNodeDrag<Node> = async (_, node) => {
     if (!snapshot) return;
     setSaving(true);
     try {
-      const next = await productApi.updateCanvas(snapshot.workspace.id, {
-        positions: [{ id: node.id, x: node.position.x, y: node.position.y }]
-      });
+      if (node.type === 'document') {
+        const document = (node.data as PrintDocumentNodeData).document;
+        setSnapshot(await productApi.moveDocument(
+          snapshot.workspace.id, document.id, 'canvas', node.position.x, node.position.y
+        ));
+        return;
+      }
+      const device = (node.data as DeviceNodeData | RackNodeData).device;
+      const positions = [{ id: node.id, x: node.position.x, y: node.position.y }];
+      if (device.profile.kind === 'rack') {
+        const dx = node.position.x - device.x;
+        const dy = node.position.y - device.y;
+        snapshot.devices
+          .filter(item => item.hardware.rackId === device.id)
+          .forEach(item => positions.push({ id: item.id, x: item.x + dx, y: item.y + dy }));
+      }
+      let next = await productApi.updateCanvas(snapshot.workspace.id, { positions });
+      if (device.profile.kind !== 'rack') {
+        const rackNode = flow?.getIntersectingNodes(node).find(item => item.type === 'rack');
+        next = await productApi.mountDevice(snapshot.workspace.id, device.id, rackNode?.id ?? null);
+      }
       setSnapshot(next);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -197,6 +306,23 @@ function ProductCanvas() {
   function startToolboxDrag(event: DragEvent<HTMLButtonElement>, profile: DeviceProfile) {
     event.dataTransfer.setData('application/x-virtulab-profile', profile.id);
     event.dataTransfer.effectAllowed = 'copy';
+    const ghost = document.createElement('div');
+    ghost.className = `toolbox-device-ghost is-${profile.kind}`;
+    const heading = document.createElement('strong');
+    heading.textContent = profile.name.pl;
+    const model = document.createElement('small');
+    model.textContent = profile.model;
+    const ports = document.createElement('div');
+    ports.className = 'ghost-ports';
+    profile.ports.slice(0, 28).forEach(port => {
+      const socket = document.createElement('span');
+      socket.title = port.name;
+      ports.append(socket);
+    });
+    ghost.append(heading, model, ports);
+    document.body.append(ghost);
+    event.dataTransfer.setDragImage(ghost, ghost.offsetWidth / 2, 24);
+    requestAnimationFrame(() => ghost.remove());
   }
 
   function allowToolboxDrop(event: DragEvent) {
@@ -215,13 +341,42 @@ function ProductCanvas() {
 
   async function connectPorts(connection: Connection) {
     if (!snapshot || !connection.sourceHandle || !connection.targetHandle) return;
+    cableDrag.current.completed = true;
     setSaving(true);
     try {
       setSnapshot(await productApi.addCable(
-        snapshot.workspace.id, connection.sourceHandle, connection.targetHandle, selectedColor
+        snapshot.workspace.id,
+        connection.sourceHandle,
+        connection.targetHandle,
+        cableDrag.current.cable ? cableColors[cableDrag.current.cable.color] ?? cableDrag.current.cable.color : selectedColor
       ));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function startCableDrag(_: MouseEvent | TouchEvent, params: OnConnectStartParams) {
+    const cable = snapshot?.cables.find(item => item.port_a === params.handleId || item.port_b === params.handleId) ?? null;
+    cableDrag.current = { cable, completed: false };
+    if (cable) {
+      setSelectedColor(cableColors[cable.color] ?? cable.color);
+      setEdges(current => current.filter(edge => edge.id !== cable.id));
+    }
+  }
+
+  async function finishCableDrag() {
+    const detached = cableDrag.current;
+    cableDrag.current = { cable: null, completed: false };
+    if (!snapshot || !detached.cable || detached.completed) return;
+    setSaving(true);
+    try {
+      setSnapshot(await productApi.removeCable(snapshot.workspace.id, detached.cable.id));
+      if (selectedCableId === detached.cable.id) setSelectedCableId(null);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+      setSnapshot(await productApi.workspace(snapshot.workspace.id));
     } finally {
       setSaving(false);
     }
@@ -232,11 +387,55 @@ function ProductCanvas() {
     setSaving(true);
     try {
       setSnapshot(await productApi.updateDeviceOs(snapshot.workspace.id, device.id, osTemplate));
+      setOsPickerDevice(null);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       setSaving(false);
     }
+  }
+
+  async function updateHardware(device: Device, hardware: Record<string, number | string>) {
+    if (!snapshot) return;
+    setSnapshot(await productApi.updateDeviceHardware(snapshot.workspace.id, device.id, hardware));
+  }
+
+  async function updateRack(device: Device, field: 'rackUnits' | 'rackWidth', value: number) {
+    if (!snapshot) return;
+    setSaving(true);
+    try {
+      setSnapshot(await productApi.updateDeviceHardware(snapshot.workspace.id, device.id, {
+        rackUnits: Number(device.hardware.rackUnits ?? 24),
+        rackWidth: Number(device.hardware.rackWidth ?? 520),
+        [field]: value
+      }));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally { setSaving(false); }
+  }
+
+  async function createOsProject(draft: OsProjectDraft): Promise<OsProject> {
+    const result = await productApi.createOsProject(draft);
+    let project = result.project;
+    if (draft.file) project = (await productApi.uploadOsMedia(project.id, draft.file)).project;
+    setCatalog(await productApi.catalog());
+    return project;
+  }
+
+  async function startOsBuilder(project: OsProject) {
+    try { await productApi.startOsBuilder(project.id); setCatalog(await productApi.catalog()); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
+  }
+
+  async function sealOsBuilder(project: OsProject) {
+    try { await productApi.sealOsBuilder(project.id); setCatalog(await productApi.catalog()); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
+  }
+
+  async function moveDocumentToCanvas(document: PrintDocument) {
+    if (!snapshot) return;
+    const center = flow?.screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 }) ?? { x: 0, y: 0 };
+    setSnapshot(await productApi.moveDocument(snapshot.workspace.id, document.id, 'canvas', center.x, center.y));
   }
 
   async function chooseCableColor(color: string) {
@@ -272,6 +471,19 @@ function ProductCanvas() {
     }
   }
 
+  useEffect(() => {
+    const deleteSelection = (event: KeyboardEvent) => {
+      if (!['Delete', 'Backspace'].includes(event.key)) return;
+      if (internalDevice || osPickerDevice || osToolOpen) return;
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement || event.target instanceof HTMLTextAreaElement) return;
+      event.preventDefault();
+      if (selectedCableId) removeSelectedCable();
+      else if (selectedDevice) removeSelected();
+    };
+    window.addEventListener('keydown', deleteSelection);
+    return () => window.removeEventListener('keydown', deleteSelection);
+  }, [selectedCableId, selectedDevice, snapshot, internalDevice, osPickerDevice, osToolOpen]);
+
   async function removeSelected() {
     if (!snapshot || !selectedDevice) return;
     setSaving(true);
@@ -296,13 +508,20 @@ function ProductCanvas() {
         edges={edges}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
-        onNodesChange={onNodesChange}
+        onNodesChange={handleNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={connectPorts}
+        onConnectStart={startCableDrag}
+        onConnectEnd={finishCableDrag}
         onDragOver={allowToolboxDrop}
         onDrop={dropToolboxDevice}
         onNodeDragStop={persistPosition}
-        onNodeClick={(_, node) => { setSelectedDevice(node.data.device); setSelectedCableId(null); }}
+        onNodeClick={(_, node) => {
+          if (node.type === 'document') return;
+          if (node.type === 'underlay') return;
+          setSelectedDevice((node.data as DeviceNodeData | RackNodeData).device);
+          setSelectedCableId(null);
+        }}
         onEdgeClick={(_, edge) => {
           setSelectedCableId(edge.id);
           setSelectedDevice(null);
@@ -319,6 +538,7 @@ function ProductCanvas() {
         nodesConnectable
         connectionMode={ConnectionMode.Loose}
         connectionLineType={ConnectionLineType.Bezier}
+        connectionLineComponent={RealisticConnectionLine}
         connectionLineStyle={{ stroke: selectedColor, strokeWidth: 5 }}
         connectOnClick={false}
         elevateNodesOnSelect={false}
@@ -327,7 +547,11 @@ function ProductCanvas() {
         zoomOnDoubleClick={false}
       >
         <Background color="#343634" gap={24} size={1} variant={BackgroundVariant.Dots} />
-        <MiniMap className="canvas-minimap" pannable zoomable nodeColor={node => (node.data as DeviceNodeData).device.profile.accent} />
+        <MiniMap className="canvas-minimap" pannable zoomable nodeColor={node => {
+          if (node.type === 'document') return '#e7e5dd';
+          if (node.type === 'underlay') return 'transparent';
+          return (node.data as DeviceNodeData | RackNodeData).device.profile.accent;
+        }} />
         <Controls className="canvas-controls" showInteractive={false} />
       </ReactFlow>
 
@@ -338,6 +562,8 @@ function ProductCanvas() {
           <small>{saving ? 'Zapisywanie...' : `Wersja ${snapshot.workspace.revision}`}</small>
         </div>
         <button className="icon-button" title="Biblioteka laboratoriów"><Library /></button>
+        <button className="icon-button" title="Obrazy systemów" onClick={() => setOsToolOpen(true)}><HardDrive /></button>
+        <button className="icon-button" title="Odbiornik wydruków" onClick={() => setPrintTrayOpen(value => !value)}><Files /></button>
         <button className="icon-button" title="Ustawienia"><Settings2 /></button>
       </header>
 
@@ -428,24 +654,26 @@ function ProductCanvas() {
               <label>Profil<input value={selectedDevice.profile.model} readOnly /></label>
               {['workstation', 'server'].includes(selectedDevice.profile.kind) && (
                 <label>System
-                  <select
-                    className="nodrag"
-                    value={selectedDevice.os_template ?? ''}
-                    onChange={event => updateDeviceOs(selectedDevice, event.target.value || null)}
-                  >
-                    <option value="">Bez systemu</option>
-                    {catalog.templates.map(template => (
-                      <option value={template.id} key={template.id}>{template.name}</option>
-                    ))}
-                  </select>
+                  <button className="os-picker-trigger" onClick={() => setOsPickerDevice(selectedDevice)}>
+                    <HardDrive />
+                    <span><strong>{catalog.templates.find(template => template.id === selectedDevice.os_template)?.name ?? 'Bez systemu'}</strong><small>Wybierz z biblioteki</small></span>
+                  </button>
                 </label>
+              )}
+              {selectedDevice.profile.kind === 'rack' && (
+                <div className="rack-settings">
+                  <label>Wysokość (U)<input type="number" min="1" max="48" value={Number(selectedDevice.hardware.rackUnits ?? 24)} onChange={event => updateRack(selectedDevice, 'rackUnits', Number(event.target.value))} /></label>
+                  <label>Szerokość<input type="number" min="320" max="1200" step="20" value={Number(selectedDevice.hardware.rackWidth ?? 520)} onChange={event => updateRack(selectedDevice, 'rackWidth', Number(event.target.value))} /></label>
+                </div>
               )}
               <dl>
                 <div><dt>Porty</dt><dd>{selectedDevice.ports.length}</dd></div>
                 <div><dt>Runtime</dt><dd>{selectedDevice.profile.runtime}</dd></div>
                 <div><dt>Stan</dt><dd>{selectedDevice.status}</dd></div>
               </dl>
-              <button className="command-button" onClick={() => setInternalDevice(selectedDevice)}><Settings2 />Sprzęt i system</button>
+              {['workstation', 'server'].includes(selectedDevice.profile.kind) && (
+                <button className="command-button" onClick={() => setInternalDevice(selectedDevice)}><Settings2 />Sprzęt i system</button>
+              )}
               <button className="command-button danger" onClick={removeSelected}><Trash2 />Usuń urządzenie</button>
             </div>
           ) : selectedCable ? (
@@ -459,40 +687,43 @@ function ProductCanvas() {
       )}
 
       {internalDevice && (
-        <section className="hardware-focus" role="dialog" aria-modal="true" aria-label={`Sprzęt ${internalDevice.name}`}>
-          <header>
-            <span><small>Urządzenie</small><strong>{internalDevice.name}</strong></span>
-            <button className="icon-button" title="Zamknij" onClick={() => setInternalDevice(null)}><X /></button>
-          </header>
-          {internalDevice.profile.kind === 'printer' ? (
-            <div className="printer-internal">
-              <div className="printer-chassis">
-                <Printer />
-                <span><small>Wirtualna drukarka</small><strong>IPP Everywhere</strong></span>
-              </div>
-              <div className="printed-output">
-                <FileOutput />
-                <span><small>Odbiornik wydruków</small><strong>0 dokumentów</strong></span>
-                <button className="command-button">Otwórz odbiornik</button>
-              </div>
-              <div className="printer-connectors">
-                <div><Network /><span><small>Sieć</small><strong>Ethernet</strong></span></div>
-                <div><Usb /><span><small>Połączenie lokalne</small><strong>USB-B</strong></span></div>
-              </div>
-            </div>
-          ) : <div className="motherboard">
-            <div className="board-label">VIRTULAB Q35</div>
-            <div className="cpu-socket"><small>CPU</small><strong>4 vCPU</strong></div>
-            <div className="ram-bank"><small>DIMM</small><strong>6 GiB</strong></div>
-            <div className="storage-bank"><small>SATA</small><strong>System disk</strong></div>
-            <div className="pcie-area">
-              {internalDevice.ports.filter(port => port.medium === 'ethernet').map(port => (
-                <div className="pcie-card" key={port.id}><Network /><span><small>PCIe NIC</small><strong>{port.name}</strong></span></div>
-              ))}
-              <button className="add-component"><Plus />Dodaj kartę</button>
-            </div>
-          </div>}
-        </section>
+        <HardwareEditor
+          device={internalDevice}
+          onSave={hardware => updateHardware(internalDevice, hardware)}
+          onClose={() => setInternalDevice(null)}
+        />
+      )}
+
+      {osPickerDevice && (
+        <OsPicker
+          templates={catalog.templates.filter(template => template.family !== 'custom' || template.status === 'sealed')}
+          value={osPickerDevice.os_template}
+          onSelect={template => updateDeviceOs(osPickerDevice, template)}
+          onClose={() => setOsPickerDevice(null)}
+          onBuild={() => { setOsPickerDevice(null); setOsToolOpen(true); }}
+        />
+      )}
+
+      {osToolOpen && (
+        <OsTool
+          catalog={catalog}
+          onCreate={createOsProject}
+          onStart={startOsBuilder}
+          onSeal={sealOsBuilder}
+          onClose={() => setOsToolOpen(false)}
+        />
+      )}
+
+      {printTrayOpen && (
+        <aside className="print-tray-panel">
+          <header><span><small>HUD</small><strong>Odbiornik wydruków</strong></span><button className="icon-button" title="Zamknij" onClick={() => setPrintTrayOpen(false)}><X /></button></header>
+          <div>
+            {snapshot.documents.filter(document => document.location === 'hud').map(document => (
+              <article key={document.id}><Files /><span><strong>{document.name}</strong><small>{document.pages} str.</small></span><button className="command-button" onClick={() => moveDocumentToCanvas(document)}>Na płótno</button></article>
+            ))}
+            {snapshot.documents.every(document => document.location !== 'hud') && <p>Brak dokumentów w odbiorniku</p>}
+          </div>
+        </aside>
       )}
 
       {error && <div className="error-toast"><span>{error}</span><button className="icon-button" onClick={() => setError(null)}><X /></button></div>}

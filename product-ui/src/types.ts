@@ -28,6 +28,7 @@ export type DeviceProfile = {
   runtime: string;
   accent: string;
   ports: ProfilePort[];
+  defaultHardware?: Record<string, number | string>;
 };
 
 export type Device = {
@@ -68,13 +69,44 @@ export type WorkspaceSnapshot = {
   workspace: Workspace;
   devices: Device[];
   cables: Cable[];
+  documents: PrintDocument[];
 };
 
 export type Template = {
   id: string;
   family: string;
+  type: string;
   name: string;
+  icon: string;
+  description: string;
+  tags: string[];
   source: string;
+  status?: string;
+  sourceValue?: string | null;
+};
+
+export type OsProject = {
+  id: string;
+  name: string;
+  description: string;
+  os_type: string;
+  icon: string;
+  tags: string[];
+  source_kind: string;
+  source_value: string | null;
+  status: string;
+};
+
+export type PrintDocument = {
+  id: string;
+  workspace_id: string;
+  printer_id: string;
+  name: string;
+  pages: number;
+  location: 'canvas' | 'hud';
+  x: number;
+  y: number;
+  created_at: number;
 };
 
 export type Catalog = {

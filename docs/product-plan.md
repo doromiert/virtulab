@@ -43,6 +43,17 @@ Interaction requirements:
 - cable paths render above the chassis surface while port labels, sockets and device controls remain legible above the path;
 - the cable palette includes built-in colors and three persistent custom slots; choosing a new custom value overwrites that slot;
 - selecting a cable and choosing a palette color recolors the existing cable, while the active color is used for new cables.
+- dragging a connected socket detaches that cable endpoint; dropping it away from a compatible socket deletes the cable;
+- cable drag previews use the same hanging geometry as realistic cables;
+- device chassis, cable, and interaction overlays are separate layers so sockets, labels, and status bars cover cable endpoints;
+- Delete and Backspace remove the selected device or cable outside editable controls;
+- only workstation and server profiles open the motherboard editor;
+- scalable 19-inch rack nodes accept mounted devices and carry them when moved;
+- printed documents are persistent entities that can live on the canvas or in a HUD output tray;
+- the OS image tool stores icon, name, description, type, tags, installation source and build state, then runs and seals a configurable installer VM;
+- the OS picker supports searchable list and grid views;
+- workstation/server hardware settings validate CPU model, core count, memory, disk capacity and network-card count;
+- motherboard layout grows with installed PCIe devices and scrolls inside its focused view instead of overlapping components.
 
 Cable runtime type is separate from cable presentation. Initial connector types are Ethernet copper, fiber/SFP, RJ45 console, USB-A/B/C, serial, power and visual-only. Hidden mode suppresses cable paths while retaining connected-port indicators.
 

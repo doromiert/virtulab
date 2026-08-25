@@ -1063,6 +1063,89 @@ class Lab:
                 return "Otwarto konsolę"
             raise LabError(f"Nieznana akcja: {action}")
 
+    def save_os_project_media(self, project_id: str, filename: str, stream, length: int) -> dict:
+        if length <= 0 or length > 24 * 1024**3:
+            raise LabError("ISO must be between 1 byte and 24 GiB")
+        safe_name = Path(filename).name
+        if not safe_name.lower().endswith(".iso"):
+            raise LabError("OS media must use the .iso extension")
+        target_dir = self.media / "os-projects" / project_id
+        target_dir.mkdir(parents=True, exist_ok=True)
+        temporary = target_dir / "source.iso.part"
+        remaining = length
+        with temporary.open("wb") as output:
+            while remaining:
+                chunk = stream.read(min(1024 * 1024, remaining))
+                if not chunk:
+                    raise LabError("ISO upload ended before the declared content length")
+                output.write(chunk)
+                remaining -= len(chunk)
+        target = target_dir / "source.iso"
+        temporary.replace(target)
+        project = self.product_store.update_os_project(
+            project_id, status="ready-to-install", source_value=str(target)
+        )
+        return {"ok": True, "project": project}
+
+    def start_os_project_builder(self, project_id: str) -> str:
+        project = self.product_store.get_os_project(project_id)
+        source = Path(project.get("source_value") or "").expanduser()
+        if project["source_kind"] == "local-iso":
+            source = source.resolve()
+        if not source.is_file() or source.suffix.lower() != ".iso":
+            raise LabError("Provide or upload a local ISO before starting the image builder")
+        installer_network = f"{LAB_PREFIX}installer"
+        self.ensure_networks([installer_network])
+        builders = self.storage / "product-builders"
+        builders.mkdir(parents=True, exist_ok=True)
+        disk = builders / f"{project_id}.qcow2"
+        if not disk.exists():
+            self.run("qemu-img", "create", "-f", "qcow2", str(disk), "120G")
+        domain_name = f"virtulab-builder-{project_id}"
+        mac_suffix = hashlib.sha256(project_id.encode()).digest()[:3]
+        mac = "52:54:00:" + ":".join(f"{byte:02x}" for byte in mac_suffix)
+        domain_uuid = str(uuid.uuid5(uuid.NAMESPACE_URL, f"https://virtulab.local/os/{project_id}"))
+        xml = windows_domain_xml(
+            domain_name,
+            domain_uuid,
+            f"VirtuLab OS builder - {project['name']}",
+            disk,
+            cdrom_xml(source, "sda"),
+            interface_xml(mac, installer_network, "e1000e", True),
+            f"OSBUILD-{project_id[-8:]}",
+        )
+        self.define_xml("define", xml)
+        state = self.virsh("domstate", domain_name, check=False).stdout.strip().lower()
+        if state != "running":
+            self.virsh("start", domain_name)
+        subprocess.Popen(
+            ["virt-viewer", "--connect", self.uri, "--wait", domain_name],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        self.product_store.update_os_project(project_id, status="configuring")
+        return "Uruchomiono maszynę instalacyjną obrazu"
+
+    def seal_os_project(self, project_id: str) -> str:
+        project = self.product_store.get_os_project(project_id)
+        domain_name = f"virtulab-builder-{project_id}"
+        state = self.virsh("domstate", domain_name, check=False).stdout.strip().lower()
+        if state not in {"shut off", ""}:
+            raise LabError("Shut down the OS builder VM before sealing its image")
+        source = self.storage / "product-builders" / f"{project_id}.qcow2"
+        if not source.exists():
+            raise LabError("OS builder disk does not exist")
+        templates = self.storage / "product-templates"
+        templates.mkdir(parents=True, exist_ok=True)
+        target = templates / f"{project_id}.qcow2"
+        temporary = target.with_suffix(".qcow2.part")
+        self.run("qemu-img", "convert", "-p", "-O", "qcow2", str(source), str(temporary))
+        temporary.replace(target)
+        self.virsh("undefine", domain_name, "--nvram", "--tpm", check=False)
+        self.product_store.update_os_project(project_id, status="sealed", source_value=str(target))
+        return f"Zapisano bazowy obraz {project['name']}"
+
 
 def microsoft_get(
     url: str,
@@ -1409,6 +1492,10 @@ class ApiHandler(SimpleHTTPRequestHandler):
             if parsed.path == "/api/product/workspaces":
                 self.send_json({"workspaces": self.lab.product_store.list_workspaces()})
                 return
+            match = re.fullmatch(r"/api/product/templates/([^/]+)", parsed.path)
+            if match:
+                self.send_json(self.lab.product_store.get_os_project(unquote(match.group(1))))
+                return
             match = re.fullmatch(r"/api/product/workspaces/([^/]+)", parsed.path)
             if match:
                 self.send_json(self.lab.product_store.snapshot(unquote(match.group(1))))
@@ -1430,6 +1517,19 @@ class ApiHandler(SimpleHTTPRequestHandler):
     def do_PUT(self) -> None:
         path = urlparse(self.path).path
         try:
+            match = re.fullmatch(r"/api/product/templates/([^/]+)/media", path)
+            if match:
+                if self.headers.get_content_type() != "application/octet-stream":
+                    raise LabError("OS media upload must use application/octet-stream")
+                length = int(self.headers.get("Content-Length", "0"))
+                result = self.lab.save_os_project_media(
+                    unquote(match.group(1)),
+                    unquote(self.headers.get("X-Filename", "source.iso")),
+                    self.rfile,
+                    length,
+                )
+                self.send_json(result, HTTPStatus.CREATED)
+                return
             match = re.fullmatch(r"/api/product/workspaces/([^/]+)/canvas", path)
             if match:
                 body = self.read_json()
@@ -1443,11 +1543,24 @@ class ApiHandler(SimpleHTTPRequestHandler):
             match = re.fullmatch(r"/api/product/workspaces/([^/]+)/devices/([^/]+)", path)
             if match:
                 body = self.read_json()
-                snapshot = self.lab.product_store.update_device_os(
-                    unquote(match.group(1)),
-                    unquote(match.group(2)),
-                    body.get("osTemplate") or None,
-                )
+                if "hardware" in body:
+                    snapshot = self.lab.product_store.update_device_hardware(
+                        unquote(match.group(1)), unquote(match.group(2)), body["hardware"]
+                    )
+                elif "mount" in body:
+                    mount = body["mount"]
+                    snapshot = self.lab.product_store.mount_device(
+                        unquote(match.group(1)),
+                        unquote(match.group(2)),
+                        mount.get("rackId"),
+                        mount.get("rackUnit"),
+                    )
+                else:
+                    snapshot = self.lab.product_store.update_device_os(
+                        unquote(match.group(1)),
+                        unquote(match.group(2)),
+                        body.get("osTemplate") or None,
+                    )
                 self.send_json(snapshot)
                 return
             match = re.fullmatch(r"/api/product/workspaces/([^/]+)/cables/([^/]+)", path)
@@ -1455,6 +1568,18 @@ class ApiHandler(SimpleHTTPRequestHandler):
                 body = self.read_json()
                 snapshot = self.lab.product_store.update_cable_color(
                     unquote(match.group(1)), unquote(match.group(2)), str(body.get("color", ""))
+                )
+                self.send_json(snapshot)
+                return
+            match = re.fullmatch(r"/api/product/workspaces/([^/]+)/documents/([^/]+)", path)
+            if match:
+                body = self.read_json()
+                snapshot = self.lab.product_store.move_print_document(
+                    unquote(match.group(1)),
+                    unquote(match.group(2)),
+                    str(body.get("location", "hud")),
+                    float(body.get("x", 0)),
+                    float(body.get("y", 0)),
                 )
                 self.send_json(snapshot)
                 return
@@ -1492,6 +1617,30 @@ class ApiHandler(SimpleHTTPRequestHandler):
                     str(body.get("color", "yellow")),
                 )
                 self.send_json(snapshot, HTTPStatus.CREATED)
+                return
+            if path == "/api/product/templates":
+                body = self.read_json()
+                catalog = self.lab.product_store.create_os_project(
+                    str(body.get("name", "")),
+                    str(body.get("description", "")),
+                    str(body.get("type", "general")),
+                    str(body.get("icon", "hard-drive")),
+                    [str(tag) for tag in body.get("tags", [])],
+                    str(body.get("sourceKind", "predefined")),
+                    body.get("sourceValue"),
+                )
+                self.send_json(catalog, HTTPStatus.CREATED)
+                return
+            match = re.fullmatch(r"/api/product/templates/([^/]+)/(start|seal)", path)
+            if match:
+                self.read_json()
+                project_id = unquote(match.group(1))
+                message = (
+                    self.lab.start_os_project_builder(project_id)
+                    if match.group(2) == "start"
+                    else self.lab.seal_os_project(project_id)
+                )
+                self.send_json({"ok": True, "message": message})
                 return
             if path == "/api/setup/start":
                 body = self.read_json()

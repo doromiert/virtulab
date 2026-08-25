@@ -18,23 +18,13 @@ export function CableEdge(props: EdgeProps) {
     ? straight
     : realisticPath(props.sourceX, props.sourceY, props.targetX, props.targetY);
   return (
-    <>
-      <BaseEdge
-        id={`${props.id}-shadow`}
-        path={path}
-        markerStart={props.markerStart}
-        markerEnd={props.markerEnd}
-        interactionWidth={0}
-        style={{ stroke: '#050605', strokeWidth: 11 }}
-      />
-      <BaseEdge
-        id={props.id}
-        path={path}
-        markerStart={props.markerStart}
-        markerEnd={props.markerEnd}
-        interactionWidth={18}
-        style={{ stroke: data?.color ?? '#f4c430', strokeWidth: props.selected ? 7 : 5 }}
-      />
-    </>
+    <BaseEdge
+      id={props.id}
+      path={path}
+      markerStart={props.markerStart}
+      markerEnd={props.markerEnd}
+      interactionWidth={18}
+      style={{ stroke: data?.color ?? '#f4c430', strokeWidth: props.selected ? 7 : 5 }}
+    />
   );
 }
