@@ -109,16 +109,15 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .cable-inspector-color small { color: var(--muted); font-size: 8px; text-transform: uppercase; }
 .cable-inspector-color strong { font-size: 11px; }
 
-.device-node { width: 290px; color: #e7e9e6; cursor: grab; }
+.device-node { width: 290px; max-width: none; color: #e7e9e6; cursor: grab; }
 .device-node.is-switch { width: 650px; }
 .device-node.is-printer { width: 330px; }
 .device-face { position: relative; min-height: 132px; padding: 10px 12px 18px; border: 1px solid transparent; border-top: 3px solid transparent; border-radius: 6px 6px 0 0; background: transparent; }
 .device-node.is-selected .device-face { outline: 2px solid var(--accent); outline-offset: 2px; }
-.device-underlay { width: 290px; pointer-events: none; }
+.device-underlay { width: 290px; height: 100%; pointer-events: none; }
 .device-underlay.kind-switch { width: 650px; }
 .device-underlay.kind-printer { width: 330px; }
-.underlay-face { min-height: 132px; border: 1px solid #555955; border-top: 3px solid var(--device-accent); border-radius: 6px 6px 0 0; background: #292c29; box-shadow: 0 10px 24px #0007; }
-.device-underlay.kind-printer .underlay-face { min-height: 190px; }
+.underlay-face { height: calc(100% - 34px); min-height: 132px; border: 1px solid #555955; border-top: 3px solid var(--device-accent); border-radius: 6px 6px 0 0; background: #292c29; box-shadow: 0 10px 24px #0007; }
 .device-heading { position: relative; z-index: 3; display: grid; grid-template-columns: 34px 1fr 30px; align-items: center; gap: 9px; }
 .device-heading > span:nth-child(2) { min-width: 0; display: flex; flex-direction: column; }
 .device-heading strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
@@ -130,14 +129,16 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .port-bank-switch { display: grid; grid-template-columns: repeat(14, minmax(20px, 1fr)); gap: 5px; }
 .device-port { position: relative; min-width: 27px; display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .device-port small { max-width: 38px; overflow: hidden; color: #aeb2ad; font: 7px ui-monospace, monospace; text-overflow: ellipsis; white-space: nowrap; }
-.port-socket.port-handle { position: relative !important; inset: auto !important; width: 24px !important; height: 18px !important; display: block; transform: none !important; border: 2px solid var(--port-cable-color) !important; border-radius: 2px !important; background: #101210 !important; box-shadow: inset 0 0 0 2px #242724; opacity: 1; cursor: crosshair; }
-.port-socket.port-handle:hover { box-shadow: 0 0 0 2px color-mix(in srgb, var(--port-cable-color), #fff 30%), inset 0 0 0 2px #242724; }
-.connector-sfp { height: 14px; border-color: #a0a59e; }
-.device-port.is-connected .port-socket { box-shadow: 0 0 0 1px var(--port-cable-color), inset 0 0 0 2px #242724; }
+.port-socket.port-handle { position: relative !important; inset: auto !important; width: 2px !important; height: 2px !important; margin: 8px 11px; display: block; transform: none !important; border: 0 !important; border-radius: 0 !important; background: transparent !important; opacity: 1; cursor: crosshair; overflow: visible; }
+.port-socket.port-handle::before { content: ""; position: absolute; left: 50%; top: 50%; width: 24px; height: 18px; transform: translate(-50%, -50%); border: 2px solid var(--port-cable-color); border-radius: 2px; background: #101210; box-shadow: inset 0 0 0 2px #242724; }
+.port-socket.port-handle:hover::before { box-shadow: 0 0 0 2px color-mix(in srgb, var(--port-cable-color), #fff 30%), inset 0 0 0 2px #242724; }
+.connector-sfp::before { height: 14px !important; }
+.device-port.is-connected .port-socket::before { box-shadow: 0 0 0 1px var(--port-cable-color), inset 0 0 0 2px #242724; }
 .side-port-bank { position: relative; z-index: 3; min-height: 28px; margin-top: 8px; display: flex; justify-content: flex-end; gap: 10px; }
 .side-port { display: flex; align-items: center; gap: 5px; }
 .side-port small { color: var(--muted); font: 7px ui-monospace, monospace; }
-.side-port .port-socket { width: 20px !important; height: 15px !important; }
+.side-port .port-socket { margin: 8px 9px; }
+.side-port .port-socket::before { width: 20px; height: 15px; }
 .printer-output { position: relative; z-index: 3; margin: 12px auto 2px; display: grid; justify-items: center; gap: 4px; }
 .printer-output > small { color: var(--muted); font-size: 7px; }
 .printer-output-slot { width: 112px; height: 24px; border: 2px solid #737873; border-radius: 2px; background: #171917; box-shadow: inset 0 5px 8px #000a; }
@@ -173,13 +174,17 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .pcie-card strong { font-size: 11px; }
 .add-component { justify-content: center; border-style: dashed; color: #b9c0b7; cursor: pointer; }
 .add-component svg { width: 15px; }
-.toolbox-device-ghost { position: fixed; left: -10000px; top: -10000px; width: 290px; min-height: 150px; padding: 14px; display: flex; flex-direction: column; border: 1px solid #646964; border-top: 3px solid var(--accent); border-radius: 6px; background: #292c29; color: #eef0ed; box-shadow: 0 16px 35px #000a; }
-.toolbox-device-ghost.is-switch { width: 650px; }
-.toolbox-device-ghost.is-rack { width: 420px; min-height: 520px; background-image: repeating-linear-gradient(to bottom, transparent 0 22px, #3b3f3b 22px 23px); }
+.toolbox-device-ghost { position: fixed; left: -10000px; top: -10000px; width: 290px; height: 185px; padding: 14px 14px 40px; display: flex; flex-direction: column; border: 1px solid #646964; border-top: 3px solid var(--accent); border-radius: 6px; background: #292c29; color: #eef0ed; box-shadow: 0 16px 35px #000a; }
+.toolbox-device-ghost.is-switch { width: 650px; height: 220px; }
+.toolbox-device-ghost.is-printer { width: 330px; height: 245px; }
+.toolbox-device-ghost.is-server { height: 220px; }
+.toolbox-device-ghost.is-workstation { height: 220px; }
+.toolbox-device-ghost.is-rack { width: 520px; height: 634px; background-image: repeating-linear-gradient(to bottom, transparent 0 22px, #3b3f3b 22px 23px); }
 .toolbox-device-ghost strong { font-size: 12px; }
 .toolbox-device-ghost small { margin-top: 3px; color: var(--muted); font-size: 9px; }
 .ghost-ports { margin-top: auto; padding-top: 20px; display: flex; flex-wrap: wrap; gap: 6px; }
 .ghost-ports span { width: 24px; height: 18px; border: 2px solid #777d76; border-radius: 2px; background: #101210; }
+.toolbox-device-ghost > footer { position: absolute; left: 0; right: 0; bottom: 0; height: 34px; display: flex; align-items: center; padding: 0 12px; border-top: 1px solid #4d514d; background: #222422; color: var(--muted); font-size: 8px; }
 
 .rack-node { border: 2px solid #686d68; border-radius: 5px; background: #202220; box-shadow: 0 12px 28px #0008; }
 .rack-node.is-selected { outline: 2px solid var(--accent); outline-offset: 2px; }

@@ -257,6 +257,19 @@ class WorkspaceStore:
                   AND device_id IN (SELECT id FROM devices WHERE profile_id = 'virtual-printer')
                 """
             )
+            for mounted_row in connection.execute(
+                "SELECT id, profile_id, hardware_json FROM devices"
+            ).fetchall():
+                mounted_hardware = json.loads(mounted_row["hardware_json"])
+                if "rackId" not in mounted_hardware:
+                    continue
+                mounted_hardware["rackSpan"] = (
+                    11 if DEVICE_PROFILES[mounted_row["profile_id"]]["kind"] == "printer" else 10
+                )
+                connection.execute(
+                    "UPDATE devices SET hardware_json = ? WHERE id = ?",
+                    (json.dumps(mounted_hardware), mounted_row["id"]),
+                )
             if connection.execute("SELECT COUNT(*) FROM workspaces").fetchone()[0] == 0:
                 self._seed_default(connection)
 
@@ -520,7 +533,7 @@ class WorkspaceStore:
     ) -> dict:
         with self._connection() as connection:
             row = connection.execute(
-                "SELECT hardware_json FROM devices WHERE id = ? AND workspace_id = ?",
+                "SELECT profile_id, hardware_json FROM devices WHERE id = ? AND workspace_id = ?",
                 (device_id, workspace_id),
             ).fetchone()
             if row is None:
@@ -538,7 +551,33 @@ class WorkspaceStore:
                 hardware.pop("rackUnit", None)
             else:
                 hardware["rackId"] = rack_id
-                hardware["rackUnit"] = self._bounded_int(rack_unit or 1, 1, 48, "rack unit")
+                mounted = connection.execute(
+                    "SELECT id, hardware_json FROM devices WHERE workspace_id = ? AND id != ?",
+                    (workspace_id, device_id),
+                ).fetchall()
+                occupied_until = 0
+                for mounted_device in mounted:
+                    mounted_hardware = json.loads(mounted_device["hardware_json"])
+                    if mounted_hardware.get("rackId") == rack_id:
+                        occupied_until = max(
+                            occupied_until,
+                            int(mounted_hardware.get("rackUnit", 1)) + int(mounted_hardware.get("rackSpan", 7)) - 1,
+                        )
+                selected_unit = rack_unit or occupied_until + 1
+                hardware["rackUnit"] = self._bounded_int(selected_unit, 1, 48, "rack unit")
+                profile_kind = DEVICE_PROFILES[row["profile_id"]]["kind"]
+                hardware["rackSpan"] = 11 if profile_kind == "printer" else 10
+                rack_row = connection.execute(
+                    "SELECT hardware_json FROM devices WHERE id = ?", (rack_id,)
+                ).fetchone()
+                rack_hardware = json.loads(rack_row["hardware_json"])
+                required_units = hardware["rackUnit"] + hardware["rackSpan"] - 1
+                if required_units > int(rack_hardware.get("rackUnits", 24)):
+                    rack_hardware["rackUnits"] = min(48, required_units)
+                    connection.execute(
+                        "UPDATE devices SET hardware_json = ? WHERE id = ?",
+                        (json.dumps(rack_hardware), rack_id),
+                    )
             connection.execute(
                 "UPDATE devices SET hardware_json = ? WHERE id = ?", (json.dumps(hardware), device_id)
             )

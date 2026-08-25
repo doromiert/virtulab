@@ -178,6 +178,17 @@ class Lab:
     def virsh(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
         return self.run("virsh", "-c", self.uri, *args, check=check)
 
+    def open_viewer(self, domain_name: str) -> None:
+        executable = os.environ.get("MIKROTIK_VIRT_VIEWER") or shutil.which("virt-viewer")
+        if not executable or not Path(executable).is_file():
+            raise LabError("virt-viewer is unavailable; run the backend through nix run .#ui")
+        subprocess.Popen(
+            [executable, "--connect", self.uri, "--wait", domain_name],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+
     def ensure_dirs(self) -> None:
         for path in (self.root, self.storage, self.golden, self.runtime, self.media):
             path.mkdir(parents=True, exist_ok=True)
@@ -329,12 +340,7 @@ class Lab:
             self.define_xml("net-define", network_xml(installer_network, "mlabinst"))
             self.virsh("net-start", installer_network)
             self.define_xml("define", self.domain_xml("template", {}))
-        subprocess.Popen(
-            ["virt-viewer", "--connect", self.uri, "--wait", self.domain_name("template")],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-        )
+        self.open_viewer(self.domain_name("template"))
         if needs_start:
             print("The console is opening. Press any key when Windows asks to boot from CD/DVD.")
             time.sleep(1)
@@ -505,12 +511,7 @@ class Lab:
     def open_template_console(self) -> None:
         if self.vm_state("template") == "undefined":
             raise LabError("The template VM has not been created yet")
-        subprocess.Popen(
-            ["virt-viewer", "--connect", self.uri, "--wait", self.domain_name("template")],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-        )
+        self.open_viewer(self.domain_name("template"))
 
     def download_windows_iso(self, language: str, source: str = "microsoft") -> Path:
         self.root.mkdir(parents=True, exist_ok=True)
@@ -1054,12 +1055,7 @@ class Lab:
                     state = self.vm_state(vm)
                 if state == "shut off":
                     self.virsh("start", name)
-                subprocess.Popen(
-                    ["virt-viewer", "--connect", self.uri, "--wait", name],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    start_new_session=True,
-                )
+                self.open_viewer(name)
                 return "Otwarto konsolę"
             raise LabError(f"Nieznana akcja: {action}")
 
@@ -1118,12 +1114,7 @@ class Lab:
         state = self.virsh("domstate", domain_name, check=False).stdout.strip().lower()
         if state != "running":
             self.virsh("start", domain_name)
-        subprocess.Popen(
-            ["virt-viewer", "--connect", self.uri, "--wait", domain_name],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-        )
+        self.open_viewer(domain_name)
         self.product_store.update_os_project(project_id, status="configuring")
         return "Uruchomiono maszynę instalacyjną obrazu"
 

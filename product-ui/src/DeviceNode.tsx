@@ -7,6 +7,7 @@ export type DeviceNodeData = {
   connectedPortColors: Record<string, string>;
   onOpen: (device: Device) => void;
   onAction: (device: Device, action: string) => void;
+  mountedWidth?: number;
 };
 
 const kindIcons = {
@@ -20,7 +21,7 @@ const kindIcons = {
 
 export function DeviceNode({ data, selected }: NodeProps) {
   const nodeData = data as DeviceNodeData;
-  const { device, connectedPortColors, onOpen, onAction } = nodeData;
+  const { device, connectedPortColors, onOpen, onAction, mountedWidth } = nodeData;
   const Icon = kindIcons[device.profile.kind as keyof typeof kindIcons] ?? Box;
   const bottomPorts = device.ports.filter(port => port.side === 'bottom');
   const sidePorts = device.ports.filter(port => port.side !== 'bottom');
@@ -32,7 +33,7 @@ export function DeviceNode({ data, selected }: NodeProps) {
   return (
     <article
       className={`device-node ${selected ? 'is-selected' : ''} ${isSwitch ? 'is-switch' : ''} ${isPrinter ? 'is-printer' : ''}`}
-      style={{ '--device-accent': device.profile.accent } as React.CSSProperties}
+      style={{ '--device-accent': device.profile.accent, width: mountedWidth } as React.CSSProperties}
       onDoubleClick={() => onOpen(device)}
     >
       <div className="device-face">

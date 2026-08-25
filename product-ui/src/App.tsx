@@ -65,6 +65,16 @@ const builtinPalette = [
 ] as const;
 const profileIcons = { router: Router, switch: Network, workstation: Box, server: Server, printer: Printer, uplink: Network };
 
+function profileDimensions(profile: DeviceProfile) {
+  if (profile.kind === 'switch') return { width: 650, height: 220 };
+  if (profile.kind === 'printer') return { width: 330, height: 245 };
+  if (profile.kind === 'rack') return {
+    width: Number(profile.defaultHardware?.rackWidth ?? 520),
+    height: 58 + Number(profile.defaultHardware?.rackUnits ?? 24) * 24
+  };
+  return { width: 290, height: profile.ports.some(port => port.side !== 'bottom') ? 220 : 185 };
+}
+
 function loadCustomColors(): string[] {
   try {
     const stored = JSON.parse(localStorage.getItem('virtulab.customCableColors') ?? 'null');
@@ -88,6 +98,7 @@ function toFlow(
     connectedPortColors[cable.port_a] = color;
     connectedPortColors[cable.port_b] = color;
   });
+  const racks = new Map(snapshot.devices.filter(device => device.profile.kind === 'rack').map(device => [device.id, device]));
   const nodes: Node[] = [];
   snapshot.devices.forEach(device => {
     if (device.profile.kind === 'rack') {
@@ -101,22 +112,30 @@ function toFlow(
       return;
     }
     const runtimeDevice = { ...device, status: runtimeStates[device.id] ?? device.status };
+    const rack = typeof device.hardware.rackId === 'string' ? racks.get(device.hardware.rackId) : undefined;
+    const mountedWidth = rack ? Number(rack.hardware.rackWidth ?? 520) - 40 : undefined;
+    const position = rack ? {
+      x: rack.x + 20,
+      y: rack.y + 58 + (Number(device.hardware.rackUnit ?? 1) - 1) * 24
+    } : { x: device.x, y: device.y };
     nodes.push({
       id: `underlay:${device.id}`,
       type: 'underlay',
-      position: { x: device.x, y: device.y },
+      position,
       zIndex: 1,
       draggable: false,
       selectable: false,
       focusable: false,
-      data: { device: runtimeDevice }
+      data: { device: runtimeDevice, mountedWidth },
+      style: mountedWidth ? { width: mountedWidth } : undefined
     });
     nodes.push({
       id: device.id,
       type: 'device',
-      position: { x: device.x, y: device.y },
+      position,
       zIndex: 3,
-      data: { device: runtimeDevice, connectedPortColors, onOpen, onAction } satisfies DeviceNodeData
+      data: { device: runtimeDevice, connectedPortColors, onOpen, onAction, mountedWidth } satisfies DeviceNodeData,
+      style: mountedWidth ? { width: mountedWidth } : undefined
     });
   });
   snapshot.documents.filter(document => document.location === 'canvas').forEach(document => {
@@ -239,7 +258,10 @@ function ProductCanvas() {
 
   function handleNodesChange(changes: NodeChange<Node>[]) {
     const mirrored = changes.flatMap(change => {
-      if (change.type !== 'position' || change.id.startsWith('underlay:')) return [change];
+      if (!['position', 'dimensions'].includes(change.type) || change.id.startsWith('underlay:')) return [change];
+      if (change.type === 'dimensions') {
+        return [change, { ...change, id: `underlay:${change.id}`, setAttributes: true }];
+      }
       return [change, { ...change, id: `underlay:${change.id}` }];
     });
     onNodesChange(mirrored);
@@ -293,9 +315,15 @@ function ProductCanvas() {
   async function addDevice(profile: DeviceProfile, position?: { x: number; y: number }) {
     if (!snapshot) return;
     const center = position ?? flow?.screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 }) ?? { x: 0, y: 0 };
+    const dimensions = profileDimensions(profile);
     setSaving(true);
     try {
-      setSnapshot(await productApi.addDevice(snapshot.workspace.id, profile.id, center.x, center.y));
+      setSnapshot(await productApi.addDevice(
+        snapshot.workspace.id,
+        profile.id,
+        center.x - dimensions.width / 2,
+        center.y - dimensions.height / 2
+      ));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -308,6 +336,7 @@ function ProductCanvas() {
     event.dataTransfer.effectAllowed = 'copy';
     const ghost = document.createElement('div');
     ghost.className = `toolbox-device-ghost is-${profile.kind}`;
+    ghost.style.setProperty('--accent', profile.accent);
     const heading = document.createElement('strong');
     heading.textContent = profile.name.pl;
     const model = document.createElement('small');
@@ -319,9 +348,11 @@ function ProductCanvas() {
       socket.title = port.name;
       ports.append(socket);
     });
-    ghost.append(heading, model, ports);
+    const status = document.createElement('footer');
+    status.textContent = '●  Wyłączone';
+    ghost.append(heading, model, ports, status);
     document.body.append(ghost);
-    event.dataTransfer.setDragImage(ghost, ghost.offsetWidth / 2, 24);
+    event.dataTransfer.setDragImage(ghost, ghost.offsetWidth / 2, ghost.offsetHeight / 2);
     requestAnimationFrame(() => ghost.remove());
   }
 
