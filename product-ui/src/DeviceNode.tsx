@@ -72,7 +72,6 @@ export function DeviceNode({ data, selected }: NodeProps) {
                   className="nodrag logical-port-handle"
                   title={`${port.name} (${port.connector})`}
                 />
-                <span className="socket-visual" />
               </span>
             </div>
           ))}
@@ -96,7 +95,6 @@ export function DeviceNode({ data, selected }: NodeProps) {
                       className="nodrag logical-port-handle"
                       title={`${port.name} (${port.connector})`}
                     />
-                    <span className="socket-visual" />
                   </span>
                 </div>
               );

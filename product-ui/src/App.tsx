@@ -49,10 +49,11 @@ import { OsTool, type OsProjectDraft } from './OsTool';
 import { PrintDocumentNode, type PrintDocumentNodeData } from './PrintDocumentNode';
 import { RackNode, type RackNodeData } from './RackNode';
 import { RealisticConnectionLine } from './RealisticConnectionLine';
+import { SocketOverlayNode, type SocketOverlayNodeData } from './SocketOverlayNode';
 import type { Cable as WorkspaceCable, CableMode, Catalog, Device, DeviceProfile, OsProject, PrintDocument, WorkspaceSnapshot } from './types';
 import './styles.css';
 
-const nodeTypes = { device: DeviceNode, underlay: DeviceUnderlay, rack: RackNode, document: PrintDocumentNode };
+const nodeTypes = { device: DeviceNode, underlay: DeviceUnderlay, sockets: SocketOverlayNode, rack: RackNode, document: PrintDocumentNode };
 const edgeTypes = { cable: CableEdge };
 const cableColors: Record<string, string> = {
   yellow: '#f4c430', blue: '#3488db', red: '#dc4641', green: '#4ea85c', black: '#25282a',
@@ -154,10 +155,21 @@ function toFlow(
       style: mountedWidth ? { width: mountedWidth } : undefined
     });
     nodes.push({
+      id: `sockets:${device.id}`,
+      type: 'sockets',
+      position,
+      zIndex: 5,
+      draggable: false,
+      selectable: false,
+      focusable: false,
+      data: { device: runtimeDevice, connectedPortColors, mountedWidth } satisfies SocketOverlayNodeData,
+      style: mountedWidth ? { width: mountedWidth } : undefined
+    });
+    nodes.push({
       id: device.id,
       type: 'device',
       position,
-      zIndex: 5,
+      zIndex: 3,
       data: { device: runtimeDevice, connectedPortColors, onOpen, onAction, mountedWidth } satisfies DeviceNodeData,
       style: mountedWidth ? { width: mountedWidth } : undefined
     });
@@ -167,7 +179,7 @@ function toFlow(
       id: `document:${document.id}`,
       type: 'document',
       position: { x: document.x, y: document.y },
-      zIndex: 4,
+      zIndex: 6,
       data: { document, onStore: onStoreDocument } satisfies PrintDocumentNodeData
     });
   });
@@ -303,7 +315,7 @@ function ProductCanvas() {
       });
     }
     const mirrored = changes.flatMap(change => {
-      if (!['position', 'dimensions'].includes(change.type) || change.id.startsWith('underlay:')) return [change];
+      if (!['position', 'dimensions'].includes(change.type) || change.id.startsWith('underlay:') || change.id.startsWith('sockets:')) return [change];
       if (change.type === 'position') {
         const current = nodes.find(node => node.id === change.id);
         if (current?.type === 'rack' && change.position) {
@@ -316,7 +328,8 @@ function ProductCanvas() {
             const position = { x: node.position.x + dx, y: node.position.y + dy };
             return [
               { type: 'position', id: node.id, position, dragging: change.dragging } as NodeChange<Node>,
-              { type: 'position', id: `underlay:${node.id}`, position, dragging: change.dragging } as NodeChange<Node>
+              { type: 'position', id: `underlay:${node.id}`, position, dragging: change.dragging } as NodeChange<Node>,
+              { type: 'position', id: `sockets:${node.id}`, position, dragging: change.dragging } as NodeChange<Node>
             ];
           });
           return [change, ...mountedChanges];
@@ -362,7 +375,8 @@ function ProductCanvas() {
               if (item.id !== dragged.id) {
                 siblingChanges.push(
                   { type: 'position', id: item.id, position, dragging: true },
-                  { type: 'position', id: `underlay:${item.id}`, position, dragging: true }
+                  { type: 'position', id: `underlay:${item.id}`, position, dragging: true },
+                  { type: 'position', id: `sockets:${item.id}`, position, dragging: true }
                 );
               }
               slotY += (measuredHeights[item.id] ?? profileDimensions(item.profile).height) + RACK_DEVICE_GAP;
@@ -370,6 +384,7 @@ function ProductCanvas() {
             return [
               { ...change, position: lockedPosition },
               { ...change, id: `underlay:${change.id}`, position: lockedPosition },
+              { ...change, id: `sockets:${change.id}`, position: lockedPosition },
               ...siblingChanges
             ];
           }
@@ -384,18 +399,23 @@ function ProductCanvas() {
               const position = { x: oldRack.position.x + 20, y: slotY };
               collapseChanges.push(
                 { type: 'position', id: item.id, position, dragging: true },
-                { type: 'position', id: `underlay:${item.id}`, position, dragging: true }
+                { type: 'position', id: `underlay:${item.id}`, position, dragging: true },
+                { type: 'position', id: `sockets:${item.id}`, position, dragging: true }
               );
               slotY += (measuredHeights[item.id] ?? profileDimensions(item.profile).height) + RACK_DEVICE_GAP;
             }
-            return [change, { ...change, id: `underlay:${change.id}` }, ...collapseChanges];
+            return [change, { ...change, id: `underlay:${change.id}` }, { ...change, id: `sockets:${change.id}` }, ...collapseChanges];
           }
         }
       }
       if (change.type === 'dimensions') {
-        return [change, { ...change, id: `underlay:${change.id}`, setAttributes: true }];
+        return [
+          change,
+          { ...change, id: `underlay:${change.id}`, setAttributes: true },
+          { ...change, id: `sockets:${change.id}`, setAttributes: true }
+        ];
       }
-      return [change, { ...change, id: `underlay:${change.id}` }];
+      return [change, { ...change, id: `underlay:${change.id}` }, { ...change, id: `sockets:${change.id}` }];
     });
     onNodesChange(mirrored);
   }
@@ -686,6 +706,7 @@ function ProductCanvas() {
         onNodeClick={(_, node) => {
           if (node.type === 'document') return;
           if (node.type === 'underlay') return;
+          if (node.type === 'sockets') return;
           setSelectedDevice((node.data as DeviceNodeData | RackNodeData).device);
           setSelectedCableId(null);
         }}
@@ -717,6 +738,7 @@ function ProductCanvas() {
         <MiniMap className="canvas-minimap" pannable zoomable nodeColor={node => {
           if (node.type === 'document') return '#e7e5dd';
           if (node.type === 'underlay') return 'transparent';
+          if (node.type === 'sockets') return 'transparent';
           return (node.data as DeviceNodeData | RackNodeData).device.profile.accent;
         }} />
         <Controls className="canvas-controls" showInteractive={false} />

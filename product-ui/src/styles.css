@@ -136,6 +136,9 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .socket-stack:hover .socket-visual { box-shadow: 0 0 0 2px color-mix(in srgb, var(--port-cable-color), #fff 30%), inset 0 0 0 2px #242724; }
 .connector-sfp { height: 14px; margin-top: 4px; }
 .device-port.is-connected .socket-visual { box-shadow: 0 0 0 1px var(--port-cable-color), inset 0 0 0 2px #242724; }
+.react-flow__node-sockets, .socket-overlay-node { pointer-events: none !important; }
+.socket-overlay-node .device-heading, .socket-overlay-node .device-port > small, .socket-overlay-node .side-port > small, .socket-overlay-node .printer-output, .socket-overlay-node .device-statusbar { visibility: hidden; }
+.socket-overlay-node .socket-visual { visibility: visible; }
 .side-port-bank { position: relative; z-index: 3; min-height: 28px; margin-top: 8px; display: flex; justify-content: flex-end; gap: 10px; }
 .side-port { display: flex; align-items: center; gap: 5px; }
 .side-port small { position: relative; z-index: 5; padding: 2px 3px; border-radius: 2px; background: #292c29; color: var(--muted); font: 7px ui-monospace, monospace; }
