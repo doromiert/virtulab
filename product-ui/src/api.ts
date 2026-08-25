@@ -46,7 +46,7 @@ export const productApi = {
       method: 'PUT',
       body: JSON.stringify({ hardware })
     }),
-  mountDevice: (workspaceId: string, deviceId: string, rackId: string | null, rackUnit = 1) =>
+  mountDevice: (workspaceId: string, deviceId: string, rackId: string | null, rackUnit?: number) =>
     request<WorkspaceSnapshot>(`/api/product/workspaces/${workspaceId}/devices/${deviceId}`, {
       method: 'PUT',
       body: JSON.stringify({ mount: { rackId, rackUnit } })

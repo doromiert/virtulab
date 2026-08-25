@@ -202,6 +202,7 @@ function ProductCanvas() {
   const [printTrayOpen, setPrintTrayOpen] = useState(false);
   const [runtimeStates, setRuntimeStates] = useState<Record<string, string>>({});
   const cableDrag = useRef<{ cable: WorkspaceCable | null; completed: boolean }>({ cable: null, completed: false });
+  const deviceDragActive = useRef(false);
 
   const openDevice = (device: Device) => {
     if (['workstation', 'server'].includes(device.profile.kind)) setInternalDevice(device);
@@ -242,6 +243,7 @@ function ProductCanvas() {
 
   useEffect(() => {
     if (!snapshot) return;
+    if (deviceDragActive.current) return;
     const flowState = toFlow(snapshot, openDevice, storeDocument, deviceAction, runtimeStates);
     setNodes(flowState.nodes);
     setEdges(cableDrag.current.cable && !cableDrag.current.completed
@@ -259,6 +261,24 @@ function ProductCanvas() {
   function handleNodesChange(changes: NodeChange<Node>[]) {
     const mirrored = changes.flatMap(change => {
       if (!['position', 'dimensions'].includes(change.type) || change.id.startsWith('underlay:')) return [change];
+      if (change.type === 'position') {
+        const current = nodes.find(node => node.id === change.id);
+        if (current?.type === 'rack' && change.position) {
+          const dx = change.position.x - current.position.x;
+          const dy = change.position.y - current.position.y;
+          const mountedChanges = nodes.flatMap(node => {
+            if (node.type !== 'device') return [];
+            const device = (node.data as DeviceNodeData).device;
+            if (device.hardware.rackId !== change.id) return [];
+            const position = { x: node.position.x + dx, y: node.position.y + dy };
+            return [
+              { type: 'position', id: node.id, position, dragging: change.dragging } as NodeChange<Node>,
+              { type: 'position', id: `underlay:${node.id}`, position, dragging: change.dragging } as NodeChange<Node>
+            ];
+          });
+          return [change, ...mountedChanges];
+        }
+      }
       if (change.type === 'dimensions') {
         return [change, { ...change, id: `underlay:${change.id}`, setAttributes: true }];
       }
@@ -280,13 +300,6 @@ function ProductCanvas() {
       }
       const device = (node.data as DeviceNodeData | RackNodeData).device;
       const positions = [{ id: node.id, x: node.position.x, y: node.position.y }];
-      if (device.profile.kind === 'rack') {
-        const dx = node.position.x - device.x;
-        const dy = node.position.y - device.y;
-        snapshot.devices
-          .filter(item => item.hardware.rackId === device.id)
-          .forEach(item => positions.push({ id: item.id, x: item.x + dx, y: item.y + dy }));
-      }
       let next = await productApi.updateCanvas(snapshot.workspace.id, { positions });
       if (device.profile.kind !== 'rack') {
         const rackNode = flow?.getIntersectingNodes(node).find(item => item.type === 'rack');
@@ -296,6 +309,7 @@ function ProductCanvas() {
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
+      deviceDragActive.current = false;
       setSaving(false);
     }
   };
@@ -546,6 +560,7 @@ function ProductCanvas() {
         onConnectEnd={finishCableDrag}
         onDragOver={allowToolboxDrop}
         onDrop={dropToolboxDevice}
+        onNodeDragStart={() => { deviceDragActive.current = true; }}
         onNodeDragStop={persistPosition}
         onNodeClick={(_, node) => {
           if (node.type === 'document') return;
