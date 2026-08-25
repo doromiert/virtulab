@@ -76,11 +76,12 @@ class WorkspaceStoreTests(unittest.TestCase):
             updated = store.update_device_hardware(
                 "default",
                 "client1",
-                {"cpuType": "host-passthrough", "cpuCores": 8, "memoryMib": 16384, "diskGib": 160, "networkCards": 5},
+                {"cpuType": "host-passthrough", "cpuCores": 8, "memoryMib": 16384, "diskGib": 160, "networkCards": 5, "usbPorts": 6},
             )
             client = next(device for device in updated["devices"] if device["id"] == "client1")
             self.assertEqual(client["hardware"]["cpuCores"], 8)
             self.assertEqual(len([port for port in client["ports"] if port["medium"] == "ethernet"]), 5)
+            self.assertEqual(len([port for port in client["ports"] if port["medium"] == "usb"]), 6)
 
     def test_rack_mount_and_os_project_metadata(self):
         with tempfile.TemporaryDirectory() as root:

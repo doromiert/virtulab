@@ -62,7 +62,7 @@ DEVICE_PROFILES = {
         "model": "Generic x86-64",
         "runtime": "libvirt",
         "accent": "#45a7c7",
-        "defaultHardware": {"cpuType": "host-model", "cpuCores": 4, "memoryMib": 6144, "diskGib": 80, "networkCards": 2},
+        "defaultHardware": {"cpuType": "host-model", "cpuCores": 4, "memoryMib": 6144, "diskGib": 80, "networkCards": 2, "usbPorts": 2},
         "ports": [
             *_ports("nic", 2),
             {"key": "usb1", "name": "USB 1", "connector": "usb-a", "medium": "usb", "side": "right"},
@@ -76,8 +76,13 @@ DEVICE_PROFILES = {
         "model": "Generic x86-64 server",
         "runtime": "libvirt",
         "accent": "#d69b3f",
-        "defaultHardware": {"cpuType": "host-model", "cpuCores": 4, "memoryMib": 8192, "diskGib": 120, "networkCards": 4},
-        "ports": [*_ports("nic", 4), {"key": "console", "name": "Console", "connector": "serial", "medium": "serial", "side": "right"}],
+        "defaultHardware": {"cpuType": "host-model", "cpuCores": 4, "memoryMib": 8192, "diskGib": 120, "networkCards": 4, "usbPorts": 2},
+        "ports": [
+            *_ports("nic", 4),
+            {"key": "usb1", "name": "USB 1", "connector": "usb-a", "medium": "usb", "side": "right"},
+            {"key": "usb2", "name": "USB 2", "connector": "usb-a", "medium": "usb", "side": "right"},
+            {"key": "console", "name": "Console", "connector": "serial", "medium": "serial", "side": "right"},
+        ],
     },
     "tplink-sg3428": {
         "id": "tplink-sg3428",
@@ -514,9 +519,11 @@ class WorkspaceStore:
                         "memoryMib": self._bounded_int(changes.get("memoryMib", hardware.get("memoryMib", 4096)), 512, 262144, "memory"),
                         "diskGib": self._bounded_int(changes.get("diskGib", hardware.get("diskGib", 80)), 4, 4096, "disk size"),
                         "networkCards": self._bounded_int(changes.get("networkCards", hardware.get("networkCards", 2)), 1, 16, "network cards"),
+                        "usbPorts": self._bounded_int(changes.get("usbPorts", hardware.get("usbPorts", 2)), 0, 16, "USB ports"),
                     }
                 )
                 self._reconcile_network_ports(connection, workspace_id, device_id, hardware["networkCards"])
+                self._reconcile_usb_ports(connection, workspace_id, device_id, hardware["usbPorts"])
             elif profile["kind"] == "rack":
                 hardware.update(
                     {
@@ -556,7 +563,7 @@ class WorkspaceStore:
                 hardware.pop("rackUnit", None)
             else:
                 hardware["rackId"] = rack_id
-                hardware["rackUnit"] = self._bounded_int(rack_unit or 48, 1, 48, "rack unit")
+                hardware["rackUnit"] = int(rack_unit) if rack_unit is not None else 1_000_000
                 profile_kind = DEVICE_PROFILES[row["profile_id"]]["kind"]
                 hardware["rackSpan"] = 11 if profile_kind == "printer" else 10
             connection.execute(
@@ -622,6 +629,33 @@ class WorkspaceStore:
                 connection.execute(
                     "INSERT INTO ports(id, device_id, port_key, name, connector, medium, side, ordinal) VALUES (?, ?, ?, ?, 'rj45', 'ethernet', 'bottom', ?)",
                     (f"{workspace_id}:{device_id}:nic{number}", device_id, f"nic{number}", f"NIC {number}", next_ordinal),
+                )
+                next_ordinal += 1
+        elif wanted < existing:
+            for row in rows[wanted:]:
+                linked = connection.execute(
+                    "SELECT 1 FROM cables WHERE port_a = ? OR port_b = ?", (row["id"], row["id"])
+                ).fetchone()
+                if linked:
+                    raise WorkspaceError(f"Disconnect {row['port_key']} before removing it")
+                connection.execute("DELETE FROM ports WHERE id = ?", (row["id"],))
+
+    def _reconcile_usb_ports(
+        self, connection: sqlite3.Connection, workspace_id: str, device_id: str, wanted: int
+    ) -> None:
+        rows = connection.execute(
+            "SELECT id, port_key, ordinal FROM ports WHERE device_id = ? AND port_key LIKE 'usb%' ORDER BY ordinal",
+            (device_id,),
+        ).fetchall()
+        existing = len(rows)
+        if wanted > existing:
+            next_ordinal = connection.execute(
+                "SELECT COALESCE(MAX(ordinal), -1) + 1 FROM ports WHERE device_id = ?", (device_id,)
+            ).fetchone()[0]
+            for number in range(existing + 1, wanted + 1):
+                connection.execute(
+                    "INSERT INTO ports(id, device_id, port_key, name, connector, medium, side, ordinal) VALUES (?, ?, ?, ?, 'usb-a', 'usb', 'right', ?)",
+                    (f"{workspace_id}:{device_id}:usb{number}", device_id, f"usb{number}", f"USB {number}", next_ordinal),
                 )
                 next_ordinal += 1
         elif wanted < existing:

@@ -52,7 +52,7 @@ Interaction requirements:
 - printed documents are persistent entities that can live on the canvas or in a HUD output tray;
 - the OS image tool stores icon, name, description, type, tags, installation source and build state, then runs and seals a configurable installer VM;
 - the OS picker supports searchable list and grid views;
-- workstation/server hardware settings validate CPU model, core count, memory, disk capacity and network-card count;
+- workstation/server hardware settings validate CPU model, core count, memory, disk capacity, network-card count and USB-port count;
 - motherboard layout grows with installed PCIe devices and scrolls inside its focused view instead of overlapping components.
 
 Cable runtime type is separate from cable presentation. Initial connector types are Ethernet copper, fiber/SFP, RJ45 console, USB-A/B/C, serial, power and visual-only. Hidden mode suppresses cable paths while retaining connected-port indicators.

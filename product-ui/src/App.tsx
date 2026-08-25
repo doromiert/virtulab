@@ -75,6 +75,11 @@ function profileDimensions(profile: DeviceProfile) {
   return { width: 290, height: profile.ports.some(port => port.side !== 'bottom') ? 220 : 185 };
 }
 
+const RACK_TOP_INSET = 12;
+const RACK_DEVICE_GAP = 8;
+const RACK_BOTTOM_SPACE = 72;
+const RACK_HEADER_HEIGHT = 58;
+
 function loadCustomColors(): string[] {
   try {
     const stored = JSON.parse(localStorage.getItem('virtulab.customCableColors') ?? 'null');
@@ -88,7 +93,8 @@ function toFlow(
   onOpen: (device: Device) => void,
   onStoreDocument: (document: PrintDocument) => void,
   onAction: (device: Device, action: string) => void,
-  runtimeStates: Record<string, string>
+  runtimeStates: Record<string, string>,
+  measuredHeights: Record<string, number>
 ) {
   const portOwners = new Map<string, string>();
   const connectedPortColors: Record<string, string> = {};
@@ -99,25 +105,43 @@ function toFlow(
     connectedPortColors[cable.port_b] = color;
   });
   const racks = new Map(snapshot.devices.filter(device => device.profile.kind === 'rack').map(device => [device.id, device]));
+  const rackLayouts = new Map<string, { height: number; positions: Map<string, { x: number; y: number }>; mounted: Device[] }>();
+  racks.forEach(rack => {
+    const mounted = snapshot.devices
+      .filter(device => device.hardware.rackId === rack.id)
+      .sort((a, b) => Number(a.hardware.rackUnit ?? 0) - Number(b.hardware.rackUnit ?? 0));
+    const positions = new Map<string, { x: number; y: number }>();
+    let offset = RACK_HEADER_HEIGHT + RACK_TOP_INSET;
+    mounted.forEach(device => {
+      positions.set(device.id, { x: rack.x + 20, y: rack.y + offset });
+      offset += (measuredHeights[device.id] ?? profileDimensions(device.profile).height) + RACK_DEVICE_GAP;
+    });
+    rackLayouts.set(rack.id, {
+      mounted,
+      positions,
+      height: offset + RACK_BOTTOM_SPACE - (mounted.length ? RACK_DEVICE_GAP : 0)
+    });
+  });
   const nodes: Node[] = [];
   snapshot.devices.forEach(device => {
     if (device.profile.kind === 'rack') {
+      const layout = rackLayouts.get(device.id)!;
       nodes.push({
         id: device.id,
         type: 'rack',
         position: { x: device.x, y: device.y },
         zIndex: 0,
-        data: { device, mounted: snapshot.devices.filter(item => item.hardware.rackId === device.id) } satisfies RackNodeData
+        data: { device, mounted: layout.mounted, rackHeight: layout.height } satisfies RackNodeData,
+        style: { width: Number(device.hardware.rackWidth ?? 520), height: layout.height }
       });
       return;
     }
     const runtimeDevice = { ...device, status: runtimeStates[device.id] ?? device.status };
     const rack = typeof device.hardware.rackId === 'string' ? racks.get(device.hardware.rackId) : undefined;
     const mountedWidth = rack ? Number(rack.hardware.rackWidth ?? 520) - 40 : undefined;
-    const position = rack ? {
-      x: rack.x + 20,
-      y: rack.y + 58 + (Number(device.hardware.rackUnit ?? 1) - 1) * 24
-    } : { x: device.x, y: device.y };
+    const position = rack
+      ? rackLayouts.get(rack.id)?.positions.get(device.id) ?? { x: rack.x + 20, y: rack.y + RACK_HEADER_HEIGHT + RACK_TOP_INSET }
+      : { x: device.x, y: device.y };
     nodes.push({
       id: `underlay:${device.id}`,
       type: 'underlay',
@@ -133,7 +157,7 @@ function toFlow(
       id: device.id,
       type: 'device',
       position,
-      zIndex: 3,
+      zIndex: 5,
       data: { device: runtimeDevice, connectedPortColors, onOpen, onAction, mountedWidth } satisfies DeviceNodeData,
       style: mountedWidth ? { width: mountedWidth } : undefined
     });
@@ -160,7 +184,7 @@ function toFlow(
       type: 'cable',
       data: { mode: snapshot.workspace.cable_mode, color: cableColors[cable.color] ?? cable.color },
       selectable: snapshot.workspace.cable_mode !== 'hidden',
-      zIndex: 2
+      zIndex: 4
     }];
   });
   return { nodes, edges };
@@ -201,8 +225,10 @@ function ProductCanvas() {
   const [osToolOpen, setOsToolOpen] = useState(false);
   const [printTrayOpen, setPrintTrayOpen] = useState(false);
   const [runtimeStates, setRuntimeStates] = useState<Record<string, string>>({});
+  const [measuredHeights, setMeasuredHeights] = useState<Record<string, number>>({});
   const cableDrag = useRef<{ cable: WorkspaceCable | null; completed: boolean }>({ cable: null, completed: false });
   const deviceDragActive = useRef(false);
+  const rackDragTarget = useRef<{ rackId: string; index: number } | null>(null);
 
   const openDevice = (device: Device) => {
     if (['workstation', 'server'].includes(device.profile.kind)) setInternalDevice(device);
@@ -244,7 +270,7 @@ function ProductCanvas() {
   useEffect(() => {
     if (!snapshot) return;
     if (deviceDragActive.current) return;
-    const flowState = toFlow(snapshot, openDevice, storeDocument, deviceAction, runtimeStates);
+    const flowState = toFlow(snapshot, openDevice, storeDocument, deviceAction, runtimeStates, measuredHeights);
     setNodes(flowState.nodes);
     setEdges(cableDrag.current.cable && !cableDrag.current.completed
       ? flowState.edges.filter(edge => edge.id !== cableDrag.current.cable?.id)
@@ -254,11 +280,28 @@ function ProductCanvas() {
     }
     if (internalDevice) setInternalDevice(snapshot.devices.find(device => device.id === internalDevice.id) ?? null);
     if (osPickerDevice) setOsPickerDevice(snapshot.devices.find(device => device.id === osPickerDevice.id) ?? null);
-  }, [snapshot, runtimeStates]);
+  }, [snapshot, runtimeStates, measuredHeights]);
 
   const selectedCable = snapshot?.cables.find(cable => cable.id === selectedCableId) ?? null;
 
   function handleNodesChange(changes: NodeChange<Node>[]) {
+    const measured = changes.filter(change =>
+      change.type === 'dimensions' && !change.id.startsWith('underlay:') && change.dimensions?.height
+    );
+    if (measured.length) {
+      setMeasuredHeights(current => {
+        let changed = false;
+        const next = { ...current };
+        for (const change of measured) {
+          if (change.type !== 'dimensions' || !change.dimensions) continue;
+          if (Math.abs((next[change.id] ?? 0) - change.dimensions.height) > 0.5) {
+            next[change.id] = change.dimensions.height;
+            changed = true;
+          }
+        }
+        return changed ? next : current;
+      });
+    }
     const mirrored = changes.flatMap(change => {
       if (!['position', 'dimensions'].includes(change.type) || change.id.startsWith('underlay:')) return [change];
       if (change.type === 'position') {
@@ -277,6 +320,76 @@ function ProductCanvas() {
             ];
           });
           return [change, ...mountedChanges];
+        }
+        if (current?.type === 'device' && change.position) {
+          const dragged = (current.data as DeviceNodeData).device;
+          const draggedHeight = measuredHeights[dragged.id] ?? profileDimensions(dragged.profile).height;
+          const candidate = nodes.find(node => {
+            if (node.type !== 'rack') return false;
+            const rack = (node.data as RackNodeData).device;
+            const rackWidth = Number(rack.hardware.rackWidth ?? 520);
+            const rackHeight = Number(node.measured?.height ?? node.height ?? 0);
+            const lockedX = node.position.x + 20;
+            const centerY = change.position!.y + draggedHeight / 2;
+            return Math.abs(change.position!.x - lockedX) <= 120
+              && centerY >= node.position.y + RACK_HEADER_HEIGHT
+              && centerY <= node.position.y + rackHeight;
+          });
+          const oldRack = typeof dragged.hardware.rackId === 'string'
+            ? nodes.find(node => node.id === dragged.hardware.rackId && node.type === 'rack')
+            : undefined;
+          if (candidate) {
+            const rackDevice = (candidate.data as RackNodeData).device;
+            const others = snapshot?.devices
+              .filter(device => device.hardware.rackId === rackDevice.id && device.id !== dragged.id)
+              .sort((a, b) => Number(a.hardware.rackUnit ?? 0) - Number(b.hardware.rackUnit ?? 0)) ?? [];
+            const lockedPosition = { x: candidate.position.x + 20, y: change.position.y };
+            const draggedCenter = change.position.y + draggedHeight / 2;
+            let offset = candidate.position.y + RACK_HEADER_HEIGHT + RACK_TOP_INSET;
+            let insertionIndex = 0;
+            for (const other of others) {
+              const height = measuredHeights[other.id] ?? profileDimensions(other.profile).height;
+              if (draggedCenter > offset + height / 2) insertionIndex += 1;
+              offset += height + RACK_DEVICE_GAP;
+            }
+            const order = [...others];
+            order.splice(insertionIndex, 0, dragged);
+            rackDragTarget.current = { rackId: rackDevice.id, index: insertionIndex };
+            let slotY = candidate.position.y + RACK_HEADER_HEIGHT + RACK_TOP_INSET;
+            const siblingChanges: NodeChange<Node>[] = [];
+            for (const item of order) {
+              const position = { x: candidate.position.x + 20, y: slotY };
+              if (item.id !== dragged.id) {
+                siblingChanges.push(
+                  { type: 'position', id: item.id, position, dragging: true },
+                  { type: 'position', id: `underlay:${item.id}`, position, dragging: true }
+                );
+              }
+              slotY += (measuredHeights[item.id] ?? profileDimensions(item.profile).height) + RACK_DEVICE_GAP;
+            }
+            return [
+              { ...change, position: lockedPosition },
+              { ...change, id: `underlay:${change.id}`, position: lockedPosition },
+              ...siblingChanges
+            ];
+          }
+          rackDragTarget.current = null;
+          if (oldRack) {
+            const remaining = snapshot?.devices
+              .filter(device => device.hardware.rackId === dragged.hardware.rackId && device.id !== dragged.id)
+              .sort((a, b) => Number(a.hardware.rackUnit ?? 0) - Number(b.hardware.rackUnit ?? 0)) ?? [];
+            let slotY = oldRack.position.y + RACK_HEADER_HEIGHT + RACK_TOP_INSET;
+            const collapseChanges: NodeChange<Node>[] = [];
+            for (const item of remaining) {
+              const position = { x: oldRack.position.x + 20, y: slotY };
+              collapseChanges.push(
+                { type: 'position', id: item.id, position, dragging: true },
+                { type: 'position', id: `underlay:${item.id}`, position, dragging: true }
+              );
+              slotY += (measuredHeights[item.id] ?? profileDimensions(item.profile).height) + RACK_DEVICE_GAP;
+            }
+            return [change, { ...change, id: `underlay:${change.id}` }, ...collapseChanges];
+          }
         }
       }
       if (change.type === 'dimensions') {
@@ -302,14 +415,22 @@ function ProductCanvas() {
       const positions = [{ id: node.id, x: node.position.x, y: node.position.y }];
       let next = await productApi.updateCanvas(snapshot.workspace.id, { positions });
       if (device.profile.kind !== 'rack') {
-        const rackNode = flow?.getIntersectingNodes(node).find(item => item.type === 'rack');
-        next = await productApi.mountDevice(snapshot.workspace.id, device.id, rackNode?.id ?? null);
+        const target = rackDragTarget.current;
+        let sortKey: number | undefined;
+        if (target) {
+          const others = snapshot.devices
+            .filter(item => item.hardware.rackId === target.rackId && item.id !== device.id)
+            .sort((a, b) => Number(a.hardware.rackUnit ?? 0) - Number(b.hardware.rackUnit ?? 0));
+          sortKey = target.index === 0 ? 0 : Number(others[target.index - 1]?.hardware.rackUnit ?? 0) + 1;
+        }
+        next = await productApi.mountDevice(snapshot.workspace.id, device.id, target?.rackId ?? null, sortKey);
       }
       setSnapshot(next);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       deviceDragActive.current = false;
+      rackDragTarget.current = null;
       setSaving(false);
     }
   };
@@ -708,7 +829,6 @@ function ProductCanvas() {
               )}
               {selectedDevice.profile.kind === 'rack' && (
                 <div className="rack-settings">
-                  <label>Wysokość (U)<input type="number" min="1" max="48" value={Number(selectedDevice.hardware.rackUnits ?? 24)} onChange={event => updateRack(selectedDevice, 'rackUnits', Number(event.target.value))} /></label>
                   <label>Szerokość<input type="number" min="320" max="1200" step="20" value={Number(selectedDevice.hardware.rackWidth ?? 520)} onChange={event => updateRack(selectedDevice, 'rackWidth', Number(event.target.value))} /></label>
                 </div>
               )}

@@ -61,14 +61,19 @@ export function DeviceNode({ data, selected }: NodeProps) {
           {bottomPorts.map(port => (
             <div className={`device-port ${connectedPortColors[port.id] ? 'is-connected' : ''}`} key={port.id}>
               <small>{port.name}</small>
-              <Handle
-                type="source"
-                position={Position.Bottom}
-                id={port.id}
-                className={`nodrag port-socket port-handle connector-${port.connector}`}
+              <span
+                className={`socket-stack connector-${port.connector}`}
                 style={{ '--port-cable-color': connectedPortColors[port.id] ?? '#777d76' } as React.CSSProperties}
-                title={`${port.name} (${port.connector})`}
-              />
+              >
+                <Handle
+                  type="source"
+                  position={Position.Bottom}
+                  id={port.id}
+                  className="nodrag logical-port-handle"
+                  title={`${port.name} (${port.connector})`}
+                />
+                <span className="socket-visual" />
+              </span>
             </div>
           ))}
         </div>
@@ -80,14 +85,19 @@ export function DeviceNode({ data, selected }: NodeProps) {
               return (
                 <div className={`side-port side-${port.side}`} key={port.id}>
                   <small>{port.name}</small>
-                  <Handle
-                    type="source"
-                    position={position}
-                    id={port.id}
-                    className={`nodrag port-socket port-handle connector-${port.connector}`}
+                  <span
+                    className={`socket-stack side-socket connector-${port.connector}`}
                     style={{ '--port-cable-color': connectedPortColors[port.id] ?? '#777d76' } as React.CSSProperties}
-                    title={`${port.name} (${port.connector})`}
-                  />
+                  >
+                    <Handle
+                      type="source"
+                      position={position}
+                      id={port.id}
+                      className="nodrag logical-port-handle"
+                      title={`${port.name} (${port.connector})`}
+                    />
+                    <span className="socket-visual" />
+                  </span>
                 </div>
               );
             })}

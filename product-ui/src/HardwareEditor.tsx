@@ -8,6 +8,7 @@ type Hardware = Record<string, string | number> & {
   memoryMib: number;
   diskGib: number;
   networkCards: number;
+  usbPorts: number;
 };
 
 export function HardwareEditor({ device, onSave, onClose }: { device: Device; onSave: (hardware: Hardware) => Promise<void>; onClose: () => void }) {
@@ -16,7 +17,8 @@ export function HardwareEditor({ device, onSave, onClose }: { device: Device; on
     cpuCores: Number(device.hardware.cpuCores ?? 4),
     memoryMib: Number(device.hardware.memoryMib ?? 4096),
     diskGib: Number(device.hardware.diskGib ?? 80),
-    networkCards: Number(device.hardware.networkCards ?? device.ports.filter(port => port.medium === 'ethernet').length)
+    networkCards: Number(device.hardware.networkCards ?? device.ports.filter(port => port.medium === 'ethernet').length),
+    usbPorts: Number(device.hardware.usbPorts ?? device.ports.filter(port => port.medium === 'usb').length)
   });
   const [saving, setSaving] = useState(false);
   const cards = Array.from({ length: draft.networkCards }, (_, index) => index + 1);
@@ -40,6 +42,7 @@ export function HardwareEditor({ device, onSave, onClose }: { device: Device; on
           <label>Pamięć RAM (MiB)<input type="number" min="512" max="262144" step="512" value={draft.memoryMib} onChange={event => number('memoryMib', 512, 262144, event.target.value)} /></label>
           <label>Dysk (GiB)<input type="number" min="4" max="4096" value={draft.diskGib} onChange={event => number('diskGib', 4, 4096, event.target.value)} /></label>
           <label>Karty sieciowe<input type="number" min="1" max="16" value={draft.networkCards} onChange={event => number('networkCards', 1, 16, event.target.value)} /></label>
+          <label>Porty USB<input type="number" min="0" max="16" value={draft.usbPorts} onChange={event => number('usbPorts', 0, 16, event.target.value)} /></label>
           <button className="primary-action" disabled={saving} onClick={save}><Save />{saving ? 'Zapisywanie...' : 'Zapisz sprzęt'}</button>
         </aside>
         <div className="motherboard" style={{ minHeight: `${520 + Math.max(0, cards.length - 4) * 55}px` }}>

@@ -119,7 +119,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .device-underlay.kind-printer { width: 330px; }
 .underlay-face { height: calc(100% - 34px); min-height: 132px; border: 1px solid #555955; border-top: 3px solid var(--device-accent); border-radius: 6px 6px 0 0; background: #292c29; box-shadow: 0 10px 24px #0007; }
 .device-heading { position: relative; z-index: 3; display: grid; grid-template-columns: 34px 1fr 30px; align-items: center; gap: 9px; }
-.device-heading > span:nth-child(2) { min-width: 0; display: flex; flex-direction: column; }
+.device-heading > span:nth-child(2) { min-width: 0; display: flex; flex-direction: column; padding: 3px 5px; border-radius: 3px; background: #292c29; }
 .device-heading strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .device-heading small { margin-top: 2px; overflow: hidden; color: var(--muted); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
 .device-kind-icon { width: 32px; height: 32px; display: grid; place-items: center; border: 1px solid #5b605a; border-radius: 4px; background: #1e201e; color: var(--device-accent); }
@@ -128,17 +128,18 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .port-bank { position: relative; z-index: 3; min-height: 57px; margin-top: 15px; display: flex; align-items: end; justify-content: center; gap: 10px; }
 .port-bank-switch { display: grid; grid-template-columns: repeat(14, minmax(20px, 1fr)); gap: 5px; }
 .device-port { position: relative; min-width: 27px; display: flex; flex-direction: column; align-items: center; gap: 4px; }
-.device-port small { max-width: 38px; overflow: hidden; color: #aeb2ad; font: 7px ui-monospace, monospace; text-overflow: ellipsis; white-space: nowrap; }
-.port-socket.port-handle { position: relative !important; inset: auto !important; width: 2px !important; height: 2px !important; margin: 8px 11px; display: block; transform: none !important; border: 0 !important; border-radius: 0 !important; background: transparent !important; opacity: 1; cursor: crosshair; overflow: visible; }
-.port-socket.port-handle::before { content: ""; position: absolute; left: 50%; top: 50%; width: 24px; height: 18px; transform: translate(-50%, -50%); border: 2px solid var(--port-cable-color); border-radius: 2px; background: #101210; box-shadow: inset 0 0 0 2px #242724; }
-.port-socket.port-handle:hover::before { box-shadow: 0 0 0 2px color-mix(in srgb, var(--port-cable-color), #fff 30%), inset 0 0 0 2px #242724; }
-.connector-sfp::before { height: 14px !important; }
-.device-port.is-connected .port-socket::before { box-shadow: 0 0 0 1px var(--port-cable-color), inset 0 0 0 2px #242724; }
+.device-port small { position: relative; z-index: 5; max-width: 42px; padding: 2px 3px; overflow: hidden; border-radius: 2px; background: #292c29; color: #aeb2ad; font: 7px ui-monospace, monospace; text-overflow: ellipsis; white-space: nowrap; }
+.socket-stack { position: relative; z-index: 6; width: 24px; height: 18px; display: block; }
+.logical-port-handle { position: absolute !important; left: 50% !important; top: 50% !important; right: auto !important; bottom: auto !important; width: 2px !important; height: 2px !important; transform: translate(-50%, -50%) !important; border: 0 !important; background: transparent !important; opacity: 1; cursor: crosshair; }
+.logical-port-handle::after { content: ""; position: absolute; left: 50%; top: 50%; width: 28px; height: 24px; transform: translate(-50%, -50%); }
+.socket-visual { position: absolute; inset: 0; z-index: 2; border: 2px solid var(--port-cable-color); border-radius: 2px; background: #101210; box-shadow: inset 0 0 0 2px #242724; pointer-events: none; }
+.socket-stack:hover .socket-visual { box-shadow: 0 0 0 2px color-mix(in srgb, var(--port-cable-color), #fff 30%), inset 0 0 0 2px #242724; }
+.connector-sfp { height: 14px; margin-top: 4px; }
+.device-port.is-connected .socket-visual { box-shadow: 0 0 0 1px var(--port-cable-color), inset 0 0 0 2px #242724; }
 .side-port-bank { position: relative; z-index: 3; min-height: 28px; margin-top: 8px; display: flex; justify-content: flex-end; gap: 10px; }
 .side-port { display: flex; align-items: center; gap: 5px; }
-.side-port small { color: var(--muted); font: 7px ui-monospace, monospace; }
-.side-port .port-socket { margin: 8px 9px; }
-.side-port .port-socket::before { width: 20px; height: 15px; }
+.side-port small { position: relative; z-index: 5; padding: 2px 3px; border-radius: 2px; background: #292c29; color: var(--muted); font: 7px ui-monospace, monospace; }
+.side-port .socket-stack { width: 20px; height: 15px; }
 .printer-output { position: relative; z-index: 3; margin: 12px auto 2px; display: grid; justify-items: center; gap: 4px; }
 .printer-output > small { color: var(--muted); font-size: 7px; }
 .printer-output-slot { width: 112px; height: 24px; border: 2px solid #737873; border-radius: 2px; background: #171917; box-shadow: inset 0 5px 8px #000a; }
@@ -193,13 +194,10 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .rack-node > header span { display: flex; flex-direction: column; }
 .rack-node > header strong { font-size: 12px; }
 .rack-node > header small, .rack-node > header em { color: var(--muted); font-size: 8px; font-style: normal; }
-.rack-rails { position: absolute; inset: 58px 12px 12px; display: flex; flex-direction: column; border-left: 8px solid #4e534e; border-right: 8px solid #4e534e; }
-.rack-unit { position: relative; height: 24px; min-height: 24px; display: grid; grid-template-columns: 28px 1fr 1fr; align-items: center; border-bottom: 1px solid #393d39; }
-.rack-unit small { color: #777d77; font: 7px ui-monospace, monospace; text-align: center; }
-.rack-unit span { height: 1px; margin: 0 5px; background: #373b37; }
+.rack-rails { position: absolute; inset: 58px 12px 12px; border-left: 8px solid #4e534e; border-right: 8px solid #4e534e; background: #1b1d1b; box-shadow: inset 0 0 0 1px #343834; }
 .rack-empty { position: absolute; inset: 56px 0 0; display: grid; place-content: center; justify-items: center; gap: 8px; color: #6f756f; font-size: 10px; pointer-events: none; }
 .rack-empty svg { width: 24px; }
-.rack-settings { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.rack-settings { display: grid; gap: 8px; }
 
 .print-document-node { width: 190px; display: grid; grid-template-columns: 1fr 30px; gap: 5px; align-items: center; padding: 5px; border: 1px solid #a6a49c; border-radius: 3px; background: #e6e4dc; color: #2d302d; box-shadow: 0 8px 20px #0006; }
 .print-document-node.is-selected { outline: 2px solid var(--accent); }
@@ -214,11 +212,11 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .hardware-settings label, .os-tool-form label { display: grid; gap: 5px; color: var(--muted); font-size: 9px; text-transform: uppercase; }
 .hardware-settings input, .hardware-settings select, .os-tool-form input, .os-tool-form select, .os-tool-form textarea { width: 100%; min-height: 36px; padding: 7px 9px; border: 1px solid var(--border); border-radius: 4px; background: #191b19; color: #ebedea; font-size: 11px; }
 .hardware-settings .primary-action { margin-top: 6px; }
-.hardware-scroll .motherboard { position: relative; width: 100%; height: auto; margin: 0; padding: 70px; display: grid; grid-template-columns: 190px 80px 1fr 190px; grid-template-rows: 210px auto; gap: 24px; align-content: start; }
-.hardware-scroll .cpu-socket, .hardware-scroll .ram-bank, .hardware-scroll .storage-bank { position: static; width: auto; height: auto; min-height: 120px; display: flex; flex-direction: column; gap: 7px; }
+.hardware-scroll .motherboard { position: relative; width: 100%; height: auto; margin: 0; padding: 70px; display: grid; grid-template-columns: repeat(3, minmax(180px, 1fr)); grid-template-rows: 180px auto; gap: 24px; align-content: start; }
+.hardware-scroll .cpu-socket, .hardware-scroll .ram-bank, .hardware-scroll .storage-bank { position: static; width: auto; height: auto; min-height: 120px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; text-align: center; }
 .hardware-scroll .cpu-socket { grid-column: 1; }
 .hardware-scroll .ram-bank { grid-column: 2; }
-.hardware-scroll .storage-bank { grid-column: 4; }
+.hardware-scroll .storage-bank { grid-column: 3; }
 .hardware-scroll .cpu-socket > svg, .hardware-scroll .ram-bank > svg, .hardware-scroll .storage-bank > svg { width: 22px; color: var(--accent); }
 .hardware-scroll .pcie-area { position: static; grid-column: 1 / -1; display: grid; gap: 9px; }
 
